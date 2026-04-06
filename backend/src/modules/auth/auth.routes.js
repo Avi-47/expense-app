@@ -1,11 +1,9 @@
 const express = require('express');
 const router = express.Router();
 
-const { sendOtp, verifyOtp, completeRegister, login, searchUsers } = require("./auth.controller");
+const { register, login, searchUsers } = require("./auth.controller");
 
-router.post("/send-otp", sendOtp);
-router.post("/verify-otp", verifyOtp);
-router.post("/complete-register", completeRegister);
+router.post("/register", register);
 router.post("/login", login);
 router.get("/search", searchUsers);
 
