@@ -18,30 +18,35 @@ app.get("/debug/expenses", async (req, res) => {
 
 const startServer = async () => {
   try {
-    console.log("Connecting to MongoDB...");
+    console.log("[1] Connecting to MongoDB...");
     await connectDB();
+    console.log("[2] MongoDB connected");
     
+    console.log("[3] Attempting Redis connection...");
     try {
       await connectRedis();
-      console.log("Redis connected");
+      console.log("[4] Redis connected");
     } catch (err) {
-      console.log("Redis not available, continuing without it");
+      console.log("[4] Redis not available, continuing without it");
     }
 
+    console.log("[5] Creating HTTP server...");
     const server = http.createServer(app);
+    console.log("[6] HTTP server created, initializing socket...");
+    
     initSocket(server);
+    console.log("[7] Socket initialized");
 
-    console.log("About to listen on port", PORT);
+    console.log(`[8] About to listen on port ${PORT}...`);
     
     server.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server is running on port ${PORT}`);
+      console.log(`[9] Server is running on port ${PORT}`);
     }).on('error', (err) => {
-      console.error('Server listen error:', err);
+      console.error('[10] Server listen error:', err.message);
       process.exit(1);
     });
 
-    console.log("Listen called");
-
+    console.log("[11] Listen called, waiting for port...");
   } catch (err) {
     console.error("Server startup failed:", err.message);
     process.exit(1);
