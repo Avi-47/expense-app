@@ -75,16 +75,12 @@ function Register() {
     setLoading(false);
   };
 
-  const isEmailDisabled = otpSent;
-  const isOtpInputDisabled = emailVerified;
-  const isSubmitDisabled = !emailVerified || !name || !password;
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-      <form className="bg-gray-800 p-8 rounded-xl w-96 space-y-4" onSubmit={(e) => e.preventDefault()}>
-        <h2 className="text-2xl font-bold text-center">Create Account</h2>
+      <form className="bg-gray-800 p-8 rounded-xl w-96 space-y-2" onSubmit={(e) => e.preventDefault()}>
+        <h2 className="text-2xl font-bold text-center mb-4">Create Account</h2>
 
-        {/* Email */}
+        {/* Email Row */}
         <div>
           <label className="text-sm text-gray-400">Email</label>
           <input
@@ -93,117 +89,109 @@ function Register() {
             className="w-full p-2 rounded bg-gray-700 outline-none"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            disabled={isEmailDisabled}
+            disabled={otpSent}
           />
         </div>
 
-        {/* OTP - Only show after sending */}
-        {otpSent && (
-          <div className="flex gap-2 items-center">
-            <div className="flex-1">
-              <label className="text-sm text-gray-400">OTP</label>
+        {/* OTP Row - appears after send OTP */}
+        {otpSent && !emailVerified && (
+          <div>
+            <label className="text-sm text-gray-400">OTP</label>
+            <div className="flex gap-2">
               <input
                 type="text"
                 placeholder="Enter OTP"
-                className="w-full p-2 rounded bg-gray-700 outline-none"
+                className="flex-1 p-2 rounded bg-gray-700 outline-none"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 maxLength={6}
-                disabled={isOtpInputDisabled}
               />
-            </div>
-            <div className="pt-5">
-              {!emailVerified ? (
-                resendTimer > 0 ? (
-                  <button
-                    type="button"
-                    disabled
-                    className="bg-gray-600 px-3 py-2 rounded text-sm opacity-50 cursor-not-allowed"
-                  >
-                    {resendTimer}s
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSendOtp}
-                    disabled={loading}
-                    className="bg-blue-600 px-3 py-2 rounded text-sm hover:bg-blue-700"
-                  >
-                    Resend
-                  </button>
-                )
+              {resendTimer > 0 ? (
+                <button disabled className="bg-gray-600 px-4 py-2 rounded text-sm">
+                  {resendTimer}s
+                </button>
               ) : (
-                <span className="text-green-400 text-sm">✓ Verified</span>
+                <button type="button" onClick={handleSendOtp} className="bg-blue-600 px-4 py-2 rounded text-sm hover:bg-blue-700">
+                  Resend
+                </button>
               )}
             </div>
           </div>
         )}
 
-        {/* Name - disabled until verified */}
+        {/* Name - blank space before verification */}
         <div>
           <label className={`text-sm ${emailVerified ? "text-gray-300" : "text-gray-600"}`}>Full Name</label>
-          <input
-            type="text"
-            placeholder="Enter your name"
-            className={`w-full p-2 rounded bg-gray-700 outline-none ${emailVerified ? "" : "opacity-50 cursor-not-allowed"}`}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!emailVerified}
-          />
+          {emailVerified ? (
+            <input
+              type="text"
+              placeholder="Enter your name"
+              className="w-full p-2 rounded bg-gray-700 outline-none"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          ) : (
+            <div className="w-full p-2 rounded bg-gray-800 border border-dashed border-gray-700 text-gray-600 text-center">
+              (Verify email to unlock)
+            </div>
+          )}
         </div>
 
-        {/* Password - disabled until verified */}
+        {/* Password - blank space before verification */}
         <div>
           <label className={`text-sm ${emailVerified ? "text-gray-300" : "text-gray-600"}`}>Password</label>
-          <input
-            type="password"
-            placeholder="Enter password"
-            className={`w-full p-2 rounded bg-gray-700 outline-none ${emailVerified ? "" : "opacity-50 cursor-not-allowed"}`}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={!emailVerified}
-          />
+          {emailVerified ? (
+            <input
+              type="password"
+              placeholder="Enter password"
+              className="w-full p-2 rounded bg-gray-700 outline-none"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          ) : (
+            <div className="w-full p-2 rounded bg-gray-800 border border-dashed border-gray-700 text-gray-600 text-center">
+              (Verify email to unlock)
+            </div>
+          )}
         </div>
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
 
-        {/* Send OTP Button - before OTP verified */}
+        {/* Buttons */}
         {!otpSent && (
           <button
             type="button"
             onClick={handleSendOtp}
             disabled={loading || !email}
-            className="w-full bg-blue-600 p-2 rounded hover:bg-blue-700 disabled:opacity-50"
+            className="w-full bg-blue-600 p-2 rounded hover:bg-blue-700 disabled:opacity-50 mt-2"
           >
             {loading ? "Sending..." : "Send OTP"}
           </button>
         )}
 
-        {/* Verify OTP Button - after OTP sent, before verified */}
         {otpSent && !emailVerified && (
           <button
             type="button"
             onClick={handleVerifyOtp}
             disabled={loading || otp.length !== 6}
-            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50"
+            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50 mt-2"
           >
             {loading ? "Verifying..." : "Verify OTP"}
           </button>
         )}
 
-        {/* Register Button - after verified */}
         {emailVerified && (
           <button
             type="button"
             onClick={handleRegister}
             disabled={loading || !name || !password}
-            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50"
+            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50 mt-2"
           >
             {loading ? "Creating..." : "Register"}
           </button>
         )}
 
-        <p className="text-sm text-center">
+        <p className="text-sm text-center mt-4">
           Already have an account? <Link to="/" className="text-blue-400">Login</Link>
         </p>
       </form>
