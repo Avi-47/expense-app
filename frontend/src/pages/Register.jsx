@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 
 function Register() {
@@ -12,26 +12,25 @@ function Register() {
   const [tempToken, setTempToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [resendTimer, setResendTimer] = useState(0);
+  const [timer, setTimer] = useState(0);
 
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (resendTimer > 0) {
-      const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
-      return () => clearTimeout(timer);
+    if (timer > 0) {
+      const t = setTimeout(() => setTimer(timer - 1), 1000);
+      return () => clearTimeout(t);
     }
-  }, [resendTimer]);
+  }, [timer]);
 
   const handleSendOtp = async () => {
     if (!email) return;
     setError("");
     setLoading(true);
-
     try {
       await api.post("/auth/send-otp", { email });
       setOtpSent(true);
-      setResendTimer(60);
+      setTimer(60);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to send OTP");
     }
@@ -42,12 +41,10 @@ function Register() {
     if (!otp || otp.length !== 6) return;
     setError("");
     setLoading(true);
-
     try {
       const res = await api.post("/auth/verify-otp", { email, otp });
       setTempToken(res.data.tempToken);
       setEmailVerified(true);
-      setResendTimer(0);
     } catch (err) {
       setError(err.response?.data?.message || "Invalid OTP");
     }
@@ -58,14 +55,8 @@ function Register() {
     if (!name || !password) return;
     setError("");
     setLoading(true);
-
     try {
-      const res = await api.post("/auth/complete-register", {
-        tempToken,
-        name,
-        password
-      });
-
+      const res = await api.post("/auth/complete-register", { tempToken, name, password });
       localStorage.setItem("token", res.data.token);
       localStorage.setItem("user", JSON.stringify(res.data.user));
       navigate("/dashboard");
@@ -75,122 +66,97 @@ function Register() {
     setLoading(false);
   };
 
+  const isEmailValid = email.includes("@") && email.includes(".");
+  const canSendOtp = isEmailValid && !loading && timer === 0;
+  const canVerify = otp.length === 6 && !loading;
+  const canRegister = name && password && !loading;
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-      <div className="bg-gray-800 p-8 rounded-xl w-96">
-        <h2 className="text-2xl font-bold text-center mb-6">Create Account</h2>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-4">
+      <h2 className="text-3xl font-bold mb-8">Create Account</h2>
 
-        {/* Email */}
-        <div className="mb-3">
+      {/* Email */}
+      <input
+        type="email"
+        placeholder="Enter email"
+        className="w-full max-w-sm p-3 rounded-lg bg-gray-800 border border-gray-700 mb-4 text-center text-lg"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        disabled={otpSent}
+      />
+
+      {/* Send OTP / Resend */}
+      {!otpSent ? (
+        <button
+          onClick={handleSendOtp}
+          disabled={!canSendOtp}
+          className="w-full max-w-sm p-3 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 font-semibold mb-6"
+        >
+          {loading ? "Sending..." : "Send OTP"}
+        </button>
+      ) : (
+        <div className="w-full max-w-sm mb-4">
           <input
-            type="email"
-            placeholder="Email"
-            className="w-full p-2 rounded bg-gray-700 outline-none"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={otpSent}
+            type="text"
+            placeholder="Enter OTP"
+            className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-center text-lg tracking-widest"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            maxLength={6}
           />
-        </div>
-
-        {/* OTP - below email, after sent */}
-        {otpSent && !emailVerified && (
-          <div className="mb-3">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Enter OTP"
-                className="flex-1 p-2 rounded bg-gray-700 outline-none"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                maxLength={6}
-              />
-              {resendTimer > 0 ? (
-                <button disabled className="bg-gray-600 px-3 py-2 rounded text-sm">
-                  {resendTimer}s
-                </button>
-              ) : (
-                <button type="button" onClick={handleSendOtp} className="bg-blue-600 px-3 py-2 rounded text-sm hover:bg-blue-700">
-                  Resend
-                </button>
-              )}
-            </div>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={handleVerifyOtp}
+              disabled={!canVerify}
+              className="flex-1 p-3 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:text-gray-500 font-semibold"
+            >
+              {loading ? "Verifying..." : "Verify OTP"}
+            </button>
+            <button
+              onClick={handleSendOtp}
+              disabled={timer > 0}
+              className="p-3 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:text-gray-500 font-semibold min-w-[100px]"
+            >
+              {timer > 0 ? `${timer}s` : "Resend"}
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Name - below OTP */}
-        <div className="mb-3">
-          {emailVerified ? (
-            <input
-              type="text"
-              placeholder="Full Name"
-              className="w-full p-2 rounded bg-gray-700 outline-none"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          ) : (
-            <div className="w-full p-2 rounded bg-gray-800 border border-dashed border-gray-600 text-gray-500 text-center">
-              (Verify email to unlock name)
-            </div>
+      {/* Username - shown after OTP sent */}
+      {otpSent && (
+        <div className="w-full max-w-sm space-y-4 animate-fade-in">
+          <input
+            type="text"
+            placeholder="Username"
+            className={`w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-center text-lg ${emailVerified ? "" : "opacity-30 pointer-events-none"}`}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={!emailVerified}
+          />
+
+          <input
+            type="password"
+            placeholder="Password"
+            className={`w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-center text-lg ${emailVerified ? "" : "opacity-30 pointer-events-none"}`}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={!emailVerified}
+          />
+
+          {error && <p className="text-red-400 text-center">{error}</p>}
+
+          {emailVerified && (
+            <button
+              onClick={handleRegister}
+              disabled={!canRegister}
+              className="w-full p-3 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:text-gray-500 font-semibold"
+            >
+              {loading ? "Creating..." : "Register"}
+            </button>
           )}
         </div>
-
-        {/* Password - below name */}
-        <div className="mb-3">
-          {emailVerified ? (
-            <input
-              type="password"
-              placeholder="Password"
-              className="w-full p-2 rounded bg-gray-700 outline-none"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          ) : (
-            <div className="w-full p-2 rounded bg-gray-800 border border-dashed border-gray-600 text-gray-500 text-center">
-              (Verify email to unlock password)
-            </div>
-          )}
-        </div>
-
-        {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
-
-        {/* Buttons - below everything */}
-        {!otpSent && (
-          <button
-            type="button"
-            onClick={handleSendOtp}
-            disabled={loading || !email}
-            className="w-full bg-blue-600 p-2 rounded hover:bg-blue-700 disabled:opacity-50 mb-2"
-          >
-            {loading ? "Sending..." : "Send OTP"}
-          </button>
-        )}
-
-        {otpSent && !emailVerified && (
-          <button
-            type="button"
-            onClick={handleVerifyOtp}
-            disabled={loading || otp.length !== 6}
-            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50 mb-2"
-          >
-            {loading ? "Verifying..." : "Verify OTP"}
-          </button>
-        )}
-
-        {emailVerified && (
-          <button
-            type="button"
-            onClick={handleRegister}
-            disabled={loading || !name || !password}
-            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50 mb-2"
-          >
-            {loading ? "Creating..." : "Register"}
-          </button>
-        )}
-
-        <p className="text-sm text-center mt-4">
-          Already have an account? <Link to="/" className="text-blue-400">Login</Link>
-        </p>
-      </div>
+      )}
     </div>
   );
 }
