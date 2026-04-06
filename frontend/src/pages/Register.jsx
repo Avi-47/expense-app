@@ -3,11 +3,12 @@ import { useNavigate, Link } from "react-router-dom";
 import api from "../services/api";
 
 function Register() {
-  const [step, setStep] = useState("email"); // email | otp | details
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [tempToken, setTempToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,7 +22,7 @@ function Register() {
 
     try {
       await api.post("/auth/send-otp", { email });
-      setStep("otp");
+      setOtpSent(true);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to send OTP");
     }
@@ -36,7 +37,7 @@ function Register() {
     try {
       const res = await api.post("/auth/verify-otp", { email, otp });
       setTempToken(res.data.tempToken);
-      setStep("details");
+      setEmailVerified(true);
     } catch (err) {
       setError(err.response?.data?.message || "Invalid OTP");
     }
@@ -64,106 +65,110 @@ function Register() {
     setLoading(false);
   };
 
-  // Step 1: Enter email
-  if (step === "email") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-        <form onSubmit={handleSendOtp} className="bg-gray-800 p-8 rounded-xl w-96 space-y-4">
-          <h2 className="text-2xl font-bold text-center">Enter Your Email</h2>
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+      <form className="bg-gray-800 p-8 rounded-xl w-96 space-y-4">
+        <h2 className="text-2xl font-bold text-center">Create Account</h2>
 
+        {/* Email - always enabled */}
+        <div>
+          <label className="text-sm text-gray-400">Email</label>
           <input
             type="email"
             placeholder="Email"
             className="w-full p-2 rounded bg-gray-700 outline-none"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={otpSent}
             required
           />
+        </div>
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+        {/* OTP Section - only after sending */}
+        {otpSent && !emailVerified && (
+          <div>
+            <label className="text-sm text-gray-400">OTP</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Enter OTP"
+                className="w-full p-2 rounded bg-gray-700 outline-none"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                maxLength={6}
+              />
+            </div>
+            <p className="text-yellow-400 text-xs mt-1">(Check Render logs for OTP)</p>
+          </div>
+        )}
 
-          <button disabled={loading} className="w-full bg-green-600 p-2 rounded hover:bg-green-700 transition">
-            {loading ? "Sending..." : "Send OTP"}
-          </button>
-
-          <p className="text-sm text-center">
-            Already have an account? <Link to="/" className="text-blue-400">Login</Link>
-          </p>
-        </form>
-      </div>
-    );
-  }
-
-  // Step 2: Enter OTP
-  if (step === "otp") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-        <form onSubmit={handleVerifyOtp} className="bg-gray-800 p-8 rounded-xl w-96 space-y-4">
-          <h2 className="text-2xl font-bold text-center">Verify Email</h2>
-          <p className="text-gray-400 text-sm text-center">Enter the 6-digit OTP</p>
-          <p className="text-yellow-400 text-xs text-center">(Check Render logs for OTP)</p>
-
-          <input
-            type="text"
-            placeholder="Enter OTP"
-            className="w-full p-2 rounded bg-gray-700 outline-none text-center text-2xl tracking-widest"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            maxLength={6}
-            required
-          />
-
-          {error && <p className="text-red-400 text-sm text-center">{error}</p>}
-
-          <button disabled={loading} className="w-full bg-green-600 p-2 rounded hover:bg-green-700 transition">
-            {loading ? "Verifying..." : "Verify OTP"}
-          </button>
-
-          <p className="text-sm text-center">
-            <button type="button" onClick={() => setStep("email")} className="text-gray-400">Back</button>
-          </p>
-        </form>
-      </div>
-    );
-  }
-
-  // Step 3: Enter name and password
-  if (step === "details") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-        <form onSubmit={handleRegister} className="bg-gray-800 p-8 rounded-xl w-96 space-y-4">
-          <h2 className="text-2xl font-bold text-center">Complete Registration</h2>
-          <p className="text-green-400 text-sm text-center">Email verified!</p>
-
+        {/* Name - disabled until verified */}
+        <div>
+          <label className={`text-sm ${emailVerified ? "text-gray-300" : "text-gray-600"}`}>Full Name</label>
           <input
             type="text"
             placeholder="Full Name"
-            className="w-full p-2 rounded bg-gray-700 outline-none"
+            className={`w-full p-2 rounded bg-gray-700 outline-none ${emailVerified ? "" : "opacity-50 cursor-not-allowed"}`}
             value={name}
             onChange={(e) => setName(e.target.value)}
+            disabled={!emailVerified}
             required
           />
+        </div>
 
+        {/* Password - disabled until verified */}
+        <div>
+          <label className={`text-sm ${emailVerified ? "text-gray-300" : "text-gray-600"}`}>Password</label>
           <input
             type="password"
             placeholder="Password"
-            className="w-full p-2 rounded bg-gray-700 outline-none"
+            className={`w-full p-2 rounded bg-gray-700 outline-none ${emailVerified ? "" : "opacity-50 cursor-not-allowed"}`}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            disabled={!emailVerified}
             required
           />
+        </div>
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+        {error && <p className="text-red-400 text-sm">{error}</p>}
 
-          <button disabled={loading} className="w-full bg-green-600 p-2 rounded hover:bg-green-700 transition">
+        {/* Action buttons based on state */}
+        {!otpSent && (
+          <button 
+            onClick={handleSendOtp} 
+            disabled={loading || !email}
+            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 transition disabled:opacity-50"
+          >
+            {loading ? "Sending..." : "Send OTP"}
+          </button>
+        )}
+
+        {otpSent && !emailVerified && (
+          <button 
+            onClick={handleVerifyOtp} 
+            disabled={loading || otp.length !== 6}
+            className="w-full bg-blue-600 p-2 rounded hover:bg-blue-700 transition disabled:opacity-50"
+          >
+            {loading ? "Verifying..." : "Verify OTP"}
+          </button>
+        )}
+
+        {emailVerified && (
+          <button 
+            onClick={handleRegister} 
+            disabled={loading || !name || !password}
+            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 transition disabled:opacity-50"
+          >
             {loading ? "Creating..." : "Register"}
           </button>
-        </form>
-      </div>
-    );
-  }
+        )}
 
-  return null;
+        <p className="text-sm text-center">
+          Already have an account? <Link to="/" className="text-blue-400">Login</Link>
+        </p>
+      </form>
+    </div>
+  );
 }
 
 export default Register;
