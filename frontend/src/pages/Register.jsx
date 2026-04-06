@@ -8,7 +8,7 @@ function Register() {
   const [password, setPassword] = useState("");
   const [step, setStep] = useState("register"); // register | verify
   const [otp, setOtp] = useState("");
-  const [userId, setUserId] = useState("");
+  const [tempToken, setTempToken] = useState("");
   const [error, setError] = useState("");
   const [resending, setResending] = useState(false);
 
@@ -25,7 +25,7 @@ function Register() {
         password
       });
 
-      setUserId(res.data.userId);
+      setTempToken(res.data.tempToken);
       setStep("verify");
     } catch (err) {
       setError(err.response?.data?.message || "Registration failed");
@@ -38,7 +38,7 @@ function Register() {
 
     try {
       const res = await api.post("/auth/verify", {
-        userId,
+        tempToken,
         otp
       });
 
@@ -53,8 +53,8 @@ function Register() {
   const handleResend = async () => {
     setResending(true);
     try {
-      await api.post("/auth/resend-otp", { userId });
-      alert("OTP resent! Check your email.");
+      await api.post("/auth/resend-otp", { tempToken });
+      alert("OTP resent!");
     } catch (err) {
       setError(err.response?.data?.message || "Failed to resend OTP");
     }
@@ -66,7 +66,8 @@ function Register() {
       <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
         <form onSubmit={handleVerify} className="bg-gray-800 p-8 rounded-xl w-96 space-y-4">
           <h2 className="text-2xl font-bold text-center">Verify Email</h2>
-          <p className="text-gray-400 text-sm text-center">Enter the 6-digit OTP sent to your email</p>
+          <p className="text-gray-400 text-sm text-center">Enter the 6-digit OTP</p>
+          <p className="text-yellow-400 text-xs text-center">(Check Render logs for OTP)</p>
           
           <input
             type="text"
@@ -81,7 +82,7 @@ function Register() {
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
           
           <button className="w-full bg-green-600 p-2 rounded hover:bg-green-700 transition">
-            Verify
+            Verify & Create Account
           </button>
           
           <button type="button" onClick={handleResend} disabled={resending} className="w-full text-blue-400 text-sm hover:underline">

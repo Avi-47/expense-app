@@ -18,14 +18,14 @@ exports.generateOTP = async (userId, email, phoneNumber) => {
   const contactMethod = email ? "email" : "phone";
   const contactValue = email || phoneNumber;
 
-  const existingOTP = await OTP.findOne({ userId, verified: false });
+  const existingOTP = await OTP.findOne({ contactValue, verified: false });
   if (existingOTP) {
     const timeSinceCreated = (Date.now() - existingOTP.createdAt.getTime()) / 1000;
     if (timeSinceCreated < RESEND_COOLDOWN_SECONDS) {
       const remaining = Math.ceil(RESEND_COOLDOWN_SECONDS - timeSinceCreated);
       throw new Error(`Please wait ${remaining} seconds before requesting a new OTP`);
     }
-    await OTP.deleteMany({ userId, verified: false });
+    await OTP.deleteMany({ contactValue, verified: false });
   }
 
   const otp = generateOTP();
@@ -33,12 +33,19 @@ exports.generateOTP = async (userId, email, phoneNumber) => {
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
   await OTP.create({
-    userId,
+    userId: userId || null,
     otpHash,
     contactMethod,
     contactValue,
     expiresAt
   });
+
+  console.log(`\n========================================`);
+  console.log(`📧 OTP GENERATED (Not sent to email)`);
+  console.log(`   Contact: ${contactValue}`);
+  console.log(`   OTP: ${otp}`);
+  console.log(`   Use this OTP to verify!`);
+  console.log(`========================================\n`);
 
   if (contactMethod === "email") {
     await sendEmail(contactValue, otp);

@@ -41,23 +41,18 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "User already exists with this email or phone" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Generate temp token for verification
+    const tempToken = jwt.sign(
+      { name, email, phoneNumber, password },
+      JWT_SECRET,
+      { expiresIn: "10min" }
+    );
 
-    const user = await User.create({
-      name,
-      email: email || undefined,
-      phoneNumber: phoneNumber || undefined,
-      password: hashedPassword,
-      isVerified: false,
-      verificationMethod: email ? "email" : "phone"
-    });
-
-    await generateOTP(user._id, email, phoneNumber);
+    await generateOTP(null, email, phoneNumber);
 
     res.status(201).json({
-      message: "Registration successful. Please verify your account.",
-      userId: user._id,
-      pendingVerification: true
+      message: "OTP sent. Complete verification to create account.",
+      tempToken // Send temp token to verify endpoint
     });
 
   } catch (err) {
@@ -68,21 +63,138 @@ exports.register = async (req, res) => {
 
 exports.verifyEmail = async (req, res) => {
   try {
-    const { userId, otp } = req.body;
+    const { otp, tempToken } = req.body;
 
-    if (!userId || !otp) {
-      return res.status(400).json({ message: "User ID and OTP are required" });
+    if (!otp || !tempToken) {
+      return res.status(400).json({ message: "OTP and temp token are required" });
     }
 
-    await verifyOTP(userId, otp);
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, JWT_SECRET);
+    } catch {
+      return res.status(400).json({ message: "Registration token expired. Please register again." });
+    }
 
-    await User.findByIdAndUpdate(userId, { isVerified: true });
+    const { name, email, phoneNumber, password } = decoded;
 
-    const user = await User.findById(userId);
+    // Verify OTP using email/phone
+    const contactValue = email || phoneNumber;
+    const OTP = require("./otp.model");
+    const otpRecord = await OTP.findOne({
+      contactValue,
+      verified: false
+    }).sort({ createdAt: -1 });
+
+    if (!otpRecord) {
+      return res.status(400).json({ message: "No OTP found. Please request a new one." });
+    }
+
+    if (new Date() > otpRecord.expiresAt) {
+      await OTP.deleteMany({ contactValue, verified: false });
+      return res.status(400).json({ message: "OTP expired. Please request a new one." });
+    }
+
+    const crypto = require("crypto");
+    const inputHash = crypto.createHash("sha256").update(otp).digest("hex");
+    
+    if (inputHash !== otpRecord.otpHash) {
+      otpRecord.attemptCount += 1;
+      await otpRecord.save();
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    otpRecord.verified = true;
+    await otpRecord.save();
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({
+      name,
+      email: email || undefined,
+      phoneNumber: phoneNumber || undefined,
+      password: hashedPassword,
+      isVerified: true,
+      verificationMethod: email ? "email" : "phone"
+    });
+
     const token = generateToken(user);
 
     res.json({
-      message: "Email verified successfully",
+      message: "Account created and verified successfully!",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        isVerified: true
+      },
+      token
+    });
+
+  } catch (err) {
+    console.error("VERIFY ERROR:", err);
+    res.status(400).json({ message: err.message });
+  }
+};
+
+exports.verifyEmail = async (req, res) => {
+  try {
+    const { otp, tempToken } = req.body;
+
+    if (!otp || !tempToken) {
+      return res.status(400).json({ message: "OTP and temp token are required" });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, JWT_SECRET);
+    } catch {
+      return res.status(400).json({ message: "Registration token expired. Please register again." });
+    }
+
+    const { name, email, phoneNumber, password } = decoded;
+    const contactValue = email || phoneNumber;
+    
+    const OTP = require("./otp.model");
+    const otpRecord = await OTP.findOne({
+      contactValue,
+      verified: false
+    }).sort({ createdAt: -1 });
+
+    if (!otpRecord) {
+      return res.status(400).json({ message: "No OTP found. Please request a new one." });
+    }
+
+    if (new Date() > otpRecord.expiresAt) {
+      await OTP.deleteMany({ contactValue, verified: false });
+      return res.status(400).json({ message: "OTP expired. Please request a new one." });
+    }
+
+    const crypto = require("crypto");
+    const inputHash = crypto.createHash("sha256").update(otp).digest("hex");
+    
+    if (inputHash !== otpRecord.otpHash) {
+      otpRecord.attemptCount += 1;
+      await otpRecord.save();
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    otpRecord.verified = true;
+    await otpRecord.save();
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({
+      name,
+      email: email || undefined,
+      phoneNumber: phoneNumber || undefined,
+      password: hashedPassword,
+      isVerified: true,
+      verificationMethod: email ? "email" : "phone"
+    });
+
+    const token = generateToken(user);
+
+    res.json({
+      message: "Account created and verified successfully!",
       user: {
         id: user._id,
         name: user.name,
@@ -100,26 +212,24 @@ exports.verifyEmail = async (req, res) => {
 
 exports.resendOTP = async (req, res) => {
   try {
-    const { userId } = req.body;
+    const { tempToken } = req.body;
 
-    if (!userId) {
-      return res.status(400).json({ message: "User ID is required" });
+    if (!tempToken) {
+      return res.status(400).json({ message: "Temp token is required" });
     }
 
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, JWT_SECRET);
+    } catch {
+      return res.status(400).json({ message: "Token expired. Please register again." });
     }
 
-    if (user.isVerified) {
-      return res.status(400).json({ message: "User is already verified" });
-    }
-
-    const result = await resendOTP(userId, user.email, user.phoneNumber);
+    const { email, phoneNumber } = decoded;
+    await generateOTP(null, email, phoneNumber);
 
     res.json({
-      message: "OTP sent successfully",
-      contact: result.contactValue
+      message: "OTP resent successfully"
     });
 
   } catch (err) {
