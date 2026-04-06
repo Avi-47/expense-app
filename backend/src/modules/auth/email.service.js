@@ -11,7 +11,18 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+console.log("📧 Email config:", { host: EMAIL_HOST, port: EMAIL_PORT, user: EMAIL_USER, hasPass: !!EMAIL_PASS });
+
 exports.sendEmail = async (to, otp) => {
+  if (!EMAIL_USER || !EMAIL_PASS) {
+    console.log(`\n========================================`);
+    console.log(`📧 EMAIL NOT CONFIGURED - OTP FALLBACK`);
+    console.log(`   To: ${to}`);
+    console.log(`   OTP: ${otp}`);
+    console.log(`========================================\n`);
+    return;
+  }
+
   const mailOptions = {
     from: `"Expense Splitter" <${EMAIL_USER}>`,
     to,
@@ -31,9 +42,13 @@ exports.sendEmail = async (to, otp) => {
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${to}`);
+    console.log(`✅ Email sent to ${to}`);
   } catch (err) {
-    console.error("Email send error:", err.message);
-    console.log(`[FALLBACK] OTP for ${to}: ${otp}`);
+    console.error("❌ Email send error:", err.message);
+    console.log(`\n========================================`);
+    console.log(`📧 OTP FALLBACK (Email failed)`);
+    console.log(`   To: ${to}`);
+    console.log(`   OTP: ${otp}`);
+    console.log(`========================================\n`);
   }
 };
