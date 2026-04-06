@@ -71,28 +71,17 @@ function Register() {
       <div className="w-full max-w-sm space-y-3">
         <h2 className="text-2xl font-bold text-center mb-4">Create Account</h2>
 
-        {/* Email + Send OTP */}
-        <div className="flex gap-2">
-          <input
-            type="email"
-            placeholder="Enter email"
-            className="flex-1 p-3 rounded bg-gray-800 border border-gray-700"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={otpSent}
-          />
-          {!otpSent && (
-            <button
-              onClick={handleSendOtp}
-              disabled={!email || loading}
-              className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-            >
-              Send OTP
-            </button>
-          )}
-        </div>
+        {/* Email */}
+        <input
+          type="email"
+          placeholder="Enter email"
+          className="w-full p-3 rounded bg-gray-800 border border-gray-700"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={otpSent}
+        />
 
-        {/* OTP + Verify/Resend */}
+        {/* OTP Row: Input on left, Button on right */}
         {otpSent && (
           <div className="flex gap-2">
             <input
@@ -113,9 +102,20 @@ function Register() {
           </div>
         )}
 
-        {/* Resend button */}
-        {otpSent && (
-          <div className="flex justify-end">
+        {/* Send OTP button (below email, full width) */}
+        {!otpSent && (
+          <button
+            onClick={handleSendOtp}
+            disabled={!email || loading}
+            className="w-full p-3 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+          >
+            Send OTP
+          </button>
+        )}
+
+        {/* Resend link */}
+        {otpSent && !emailVerified && (
+          <div className="text-right">
             <button
               onClick={handleSendOtp}
               disabled={timer > 0}
