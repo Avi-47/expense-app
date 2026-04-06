@@ -1,13 +1,24 @@
-const Razorpay = require("razorpay");
+let razorpay = null;
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-});
+try {
+  if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    const Razorpay = require("razorpay");
+    razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
+  }
+} catch (err) {
+  console.log("Razorpay not available");
+}
 
 exports.createOrder = async (amount) => {
+  if (!razorpay) {
+    console.log("Razorpay not configured");
+    return null;
+  }
   return await razorpay.orders.create({
-    amount: amount * 100, // paise
+    amount: amount * 100,
     currency: "INR",
     receipt: `receipt_${Date.now()}`
   });
