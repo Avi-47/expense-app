@@ -18,6 +18,7 @@ app.get("/debug/expenses", async (req, res) => {
 
 const startServer = async () => {
   try {
+    console.log("Connecting to MongoDB...");
     await connectDB();
     
     try {
@@ -30,12 +31,13 @@ const startServer = async () => {
     const server = http.createServer(app);
     initSocket(server);
 
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log(`Server is running on port ${PORT}`);
     });
 
   } catch (err) {
-    console.error("Server startup failed:", err);
+    console.error("Server startup failed:", err.message);
+    process.exit(1);
   }
 };
 
