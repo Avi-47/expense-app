@@ -8,14 +8,27 @@ const userSchema = new mongoose.Schema(
     },
     email: {
       type: String,
-      required: true,
-      unique: true
+      unique: true,
+      sparse: true
+    },
+    phoneNumber: {
+      type: String,
+      unique: true,
+      sparse: true
     },
     password: {
       type: String,
       required: true
     },
-    // Store personal chat contacts (conversations with other users)
+    isVerified: {
+      type: Boolean,
+      default: false
+    },
+    verificationMethod: {
+      type: String,
+      enum: ["email", "phone", null],
+      default: null
+    },
     conversations: [
       {
         participantId: {
