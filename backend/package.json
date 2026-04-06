@@ -5,8 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon src/server.js",
-    "build": "cd ../frontend && npm install && VITE_API_URL=/api npm run build",
-    "start": "npm run build && node src/server.js"
+    "start": "node src/server.js"
   },
   "keywords": [],
   "author": "",
