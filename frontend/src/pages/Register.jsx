@@ -71,7 +71,7 @@ function Register() {
       <div className="w-full max-w-sm space-y-3">
         <h2 className="text-2xl font-bold text-center mb-4">Create Account</h2>
 
-        {/* Email */}
+        {/* Email (full width) */}
         <input
           type="email"
           placeholder="Enter email"
@@ -81,17 +81,17 @@ function Register() {
           disabled={otpSent}
         />
 
-        {/* OTP Row: Input on left, Button on right */}
-        {otpSent && (
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Enter OTP"
-              className="flex-1 p-3 rounded bg-gray-800 border border-gray-700"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              maxLength={6}
-            />
+        {/* OTP row: input left, button right */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Enter OTP"
+            className="flex-1 p-3 rounded bg-gray-800 border border-gray-700"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            maxLength={6}
+          />
+          {otpSent ? (
             <button
               onClick={handleVerifyOtp}
               disabled={otp.length !== 6 || loading}
@@ -99,19 +99,16 @@ function Register() {
             >
               Verify
             </button>
-          </div>
-        )}
-
-        {/* Send OTP button (below email, full width) */}
-        {!otpSent && (
-          <button
-            onClick={handleSendOtp}
-            disabled={!email || loading}
-            className="w-full p-3 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-          >
-            Send OTP
-          </button>
-        )}
+          ) : (
+            <button
+              onClick={handleSendOtp}
+              disabled={!email || loading}
+              className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+            >
+              Send OTP
+            </button>
+          )}
+        </div>
 
         {/* Resend link */}
         {otpSent && !emailVerified && (
