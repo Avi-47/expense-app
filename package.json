@@ -1,4 +1,9 @@
 {
+  "name": "expense-app",
+  "private": true,
+  "scripts": {
+    "build:frontend": "cd frontend && npm install && VITE_API_URL=/api npm run build"
+  },
   "dependencies": {
     "@google/generative-ai": "^0.24.1"
   }
