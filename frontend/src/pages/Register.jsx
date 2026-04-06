@@ -77,15 +77,14 @@ function Register() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-      <form className="bg-gray-800 p-8 rounded-xl w-96 space-y-2" onSubmit={(e) => e.preventDefault()}>
-        <h2 className="text-2xl font-bold text-center mb-4">Create Account</h2>
+      <div className="bg-gray-800 p-8 rounded-xl w-96">
+        <h2 className="text-2xl font-bold text-center mb-6">Create Account</h2>
 
-        {/* Email Row */}
-        <div>
-          <label className="text-sm text-gray-400">Email</label>
+        {/* Email */}
+        <div className="mb-3">
           <input
             type="email"
-            placeholder="Enter your email"
+            placeholder="Email"
             className="w-full p-2 rounded bg-gray-700 outline-none"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -93,10 +92,9 @@ function Register() {
           />
         </div>
 
-        {/* OTP Row - appears after send OTP */}
+        {/* OTP - below email, after sent */}
         {otpSent && !emailVerified && (
-          <div>
-            <label className="text-sm text-gray-400">OTP</label>
+          <div className="mb-3">
             <div className="flex gap-2">
               <input
                 type="text"
@@ -107,11 +105,11 @@ function Register() {
                 maxLength={6}
               />
               {resendTimer > 0 ? (
-                <button disabled className="bg-gray-600 px-4 py-2 rounded text-sm">
+                <button disabled className="bg-gray-600 px-3 py-2 rounded text-sm">
                   {resendTimer}s
                 </button>
               ) : (
-                <button type="button" onClick={handleSendOtp} className="bg-blue-600 px-4 py-2 rounded text-sm hover:bg-blue-700">
+                <button type="button" onClick={handleSendOtp} className="bg-blue-600 px-3 py-2 rounded text-sm hover:bg-blue-700">
                   Resend
                 </button>
               )}
@@ -119,51 +117,49 @@ function Register() {
           </div>
         )}
 
-        {/* Name - blank space before verification */}
-        <div>
-          <label className={`text-sm ${emailVerified ? "text-gray-300" : "text-gray-600"}`}>Full Name</label>
+        {/* Name - below OTP */}
+        <div className="mb-3">
           {emailVerified ? (
             <input
               type="text"
-              placeholder="Enter your name"
+              placeholder="Full Name"
               className="w-full p-2 rounded bg-gray-700 outline-none"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           ) : (
-            <div className="w-full p-2 rounded bg-gray-800 border border-dashed border-gray-700 text-gray-600 text-center">
-              (Verify email to unlock)
+            <div className="w-full p-2 rounded bg-gray-800 border border-dashed border-gray-600 text-gray-500 text-center">
+              (Verify email to unlock name)
             </div>
           )}
         </div>
 
-        {/* Password - blank space before verification */}
-        <div>
-          <label className={`text-sm ${emailVerified ? "text-gray-300" : "text-gray-600"}`}>Password</label>
+        {/* Password - below name */}
+        <div className="mb-3">
           {emailVerified ? (
             <input
               type="password"
-              placeholder="Enter password"
+              placeholder="Password"
               className="w-full p-2 rounded bg-gray-700 outline-none"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           ) : (
-            <div className="w-full p-2 rounded bg-gray-800 border border-dashed border-gray-700 text-gray-600 text-center">
-              (Verify email to unlock)
+            <div className="w-full p-2 rounded bg-gray-800 border border-dashed border-gray-600 text-gray-500 text-center">
+              (Verify email to unlock password)
             </div>
           )}
         </div>
 
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+        {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
 
-        {/* Buttons */}
+        {/* Buttons - below everything */}
         {!otpSent && (
           <button
             type="button"
             onClick={handleSendOtp}
             disabled={loading || !email}
-            className="w-full bg-blue-600 p-2 rounded hover:bg-blue-700 disabled:opacity-50 mt-2"
+            className="w-full bg-blue-600 p-2 rounded hover:bg-blue-700 disabled:opacity-50 mb-2"
           >
             {loading ? "Sending..." : "Send OTP"}
           </button>
@@ -174,7 +170,7 @@ function Register() {
             type="button"
             onClick={handleVerifyOtp}
             disabled={loading || otp.length !== 6}
-            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50 mt-2"
+            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50 mb-2"
           >
             {loading ? "Verifying..." : "Verify OTP"}
           </button>
@@ -185,7 +181,7 @@ function Register() {
             type="button"
             onClick={handleRegister}
             disabled={loading || !name || !password}
-            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50 mt-2"
+            className="w-full bg-green-600 p-2 rounded hover:bg-green-700 disabled:opacity-50 mb-2"
           >
             {loading ? "Creating..." : "Register"}
           </button>
@@ -194,7 +190,7 @@ function Register() {
         <p className="text-sm text-center mt-4">
           Already have an account? <Link to="/" className="text-blue-400">Login</Link>
         </p>
-      </form>
+      </div>
     </div>
   );
 }
