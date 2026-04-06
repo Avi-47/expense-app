@@ -1,4 +1,5 @@
 # Expense Splitter 🤝
+live link- https://expense-app-3h78.onrender.com/
 
 A full-stack group expense splitting application with real-time chat and AI-powered features. Built with the MERN stack (MongoDB, Express, React, Node.js) plus Socket.io for real-time communication and Groq AI for intelligent features.
 
