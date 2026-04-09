@@ -11,10 +11,10 @@ export const AuthProvider = ({ children }) => {
       const storedUser = localStorage.getItem("user");
       const storedToken = localStorage.getItem("token");
       
-      if (storedUser && storedUser !== "undefined") {
+      if (storedUser && storedUser !== "undefined" && storedUser !== "null") {
         setUser(JSON.parse(storedUser));
       }
-      if (storedToken && storedToken !== "undefined") {
+      if (storedToken && storedToken !== "undefined" && storedToken !== "null") {
         setToken(storedToken);
       }
     } catch (e) {

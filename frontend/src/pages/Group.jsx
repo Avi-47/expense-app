@@ -337,12 +337,12 @@ function Group() {
     let currentUserId = null;
     try {
       const stored = localStorage.getItem("user");
-      if (stored && stored !== "undefined") {
+      if (stored && stored !== "undefined" && stored !== "null") {
         const parsed = JSON.parse(stored);
         currentUserId = parsed?.id || parsed?._id || null;
       }
     } catch (e) {
-      console.error("Error parsing user:", e);
+      // Ignore
     }
     
     const senderIdStr = senderId ? String(senderId) : "";

@@ -13,15 +13,14 @@ function Dashboard() {
   const getCurrentUserId = () => {
     try {
       const stored = localStorage.getItem("user");
-      if (stored && stored !== "undefined") {
+      if (stored && stored !== "undefined" && stored !== "null") {
         const parsed = JSON.parse(stored);
         return parsed?.id || parsed?._id || null;
       }
     } catch (e) {
-      console.error("Error parsing user:", e);
+      // Ignore
     }
     return user?.id || user?._id || null;
-    return null;
   };
 
   const [groups, setGroups] = useState([]);
