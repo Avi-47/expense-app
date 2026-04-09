@@ -104,9 +104,14 @@ function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+      <div className="text-center mb-8">
+        <div className="text-6xl mb-4">💸</div>
+        <h1 className="text-4xl font-bold text-green-400">SplitNChill</h1>
+        <p className="text-gray-400 mt-2">Split expenses with friends easily</p>
+      </div>
       <form
         onSubmit={handleLogin}
-        className="bg-gray-800 p-8 rounded-xl w-96 space-y-4"
+        className="bg-gray-800 p-8 rounded-xl w-96 space-y-4 ml-8"
       >
         <h2 className="text-2xl font-bold text-center">Login</h2>
 
