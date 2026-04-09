@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import api from "../utils/api";
+import api from "../services/api";
 import { useEffect } from "react";
 
 function Invite() {
