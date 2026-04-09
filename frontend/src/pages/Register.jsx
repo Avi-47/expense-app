@@ -67,97 +67,157 @@ function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-4">
-      <div className="w-full max-w-sm space-y-3">
-        <h2 className="text-2xl font-bold text-center mb-4">Create Account</h2>
-
-        {/* Email (full width) */}
-        <input
-          type="email"
-          placeholder="Enter email"
-          className="w-full p-3 rounded bg-gray-800 border border-gray-700"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          disabled={otpSent}
-        />
-
-        {/* OTP row: input left, button right */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Enter OTP"
-            className="flex-1 p-3 rounded bg-gray-800 border border-gray-700"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            maxLength={6}
-          />
-          {otpSent ? (
-            <button
-              onClick={handleVerifyOtp}
-              disabled={otp.length !== 6 || loading}
-              className="px-4 py-2 rounded bg-green-600 hover:bg-green-700 disabled:opacity-50"
-            >
-              Verify
-            </button>
-          ) : (
-            <button
-              onClick={handleSendOtp}
-              disabled={!email || loading}
-              className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-            >
-              Send OTP
-            </button>
-          )}
+    <div className="landing-wrapper" style={{ minHeight: '100vh', padding: '6rem 2rem 4rem' }}>
+      <header className="landing-header" style={{ position: 'fixed', top: 0, left: 0, right: 0 }}>
+        <div className="header-logo">
+          <span className="logo-icon">💸</span>
+          <span className="logo-text">SplitNChill</span>
         </div>
+        
+        <nav className="header-nav">
+          <a href="#features" className="nav-link">Features</a>
+          <a href="#how-it-works" className="nav-link">How It Works</a>
+          <a href="#pricing" className="nav-link">Pricing</a>
+          <a href="#about" className="nav-link">About</a>
+        </nav>
+        
+        <div className="header-actions">
+          <Link to="/" className="btn-outline">Login</Link>
+          <Link to="/register" className="btn-primary">Sign Up</Link>
+        </div>
+      </header>
 
-        {/* Resend link */}
-        {otpSent && !emailVerified && (
-          <div className="text-right">
-            <button
-              onClick={handleSendOtp}
-              disabled={timer > 0}
-              className="text-sm text-blue-400 hover:underline disabled:text-gray-500"
-            >
-              {timer > 0 ? `Resend in ${timer}s` : "Resend OTP"}
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '3rem', maxWidth: '1200px', margin: '0 auto' }}>
+        {/* Left - Content */}
+        <div style={{ flex: 1, maxWidth: '500px' }}>
+          <h1 style={{ fontSize: '3rem', fontWeight: 800, lineHeight: 1.1, marginBottom: '1.5rem' }}>
+            Split expenses.<br />
+            <span className="gradient-text">Chat. Chill.</span>
+          </h1>
+          <p style={{ fontSize: '1.1rem', color: 'rgba(255,255,255,0.6)', marginBottom: '2rem', lineHeight: 1.6 }}>
+            Track shared expenses with friends in real-time conversations. 
+            No more awkward money talks.
+          </p>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button className="btn-primary btn-lg" onClick={() => navigate('/dashboard')}>
+              Get Started
+            </button>
+            <button className="btn-outline btn-lg">
+              Live Demo
             </button>
           </div>
-        )}
+        </div>
 
-        {/* Username */}
-        <input
-          type="text"
-          placeholder="Username"
-          className={`w-full p-3 rounded bg-gray-800 border border-gray-700 ${emailVerified ? "" : "opacity-40"}`}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={!emailVerified}
-        />
+        {/* Right - Register Card */}
+        <div className="hero-auth">
+          <div className="auth-card glass" style={{ maxWidth: '420px' }}>
+            <div className="auth-tabs">
+              <Link to="/login" className={`auth-tab`}>Login</Link>
+              <span className="auth-tab active">Register</span>
+            </div>
 
-        {/* Password */}
-        <input
-          type="password"
-          placeholder="Password"
-          className={`w-full p-3 rounded bg-gray-800 border border-gray-700 ${emailVerified ? "" : "opacity-40"}`}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          disabled={!emailVerified}
-        />
+            <div className="auth-form" style={{ gap: '0.75rem' }}>
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input
+                  type="email"
+                  className="form-input"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={otpSent}
+                />
+              </div>
 
-        {/* Register Button */}
-        <button
-          onClick={handleRegister}
-          disabled={!emailVerified || !name || !password || loading}
-          className={`w-full p-3 rounded font-semibold ${emailVerified ? "bg-green-600 hover:bg-green-700" : "bg-gray-700 text-gray-500"}`}
-        >
-          {loading ? "Creating..." : "Register"}
-        </button>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="form-input flex-1"
+                  placeholder="Enter OTP"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  maxLength={6}
+                />
+                {otpSent ? (
+                  <button
+                    onClick={handleVerifyOtp}
+                    disabled={otp.length !== 6 || loading}
+                    className="auth-btn-primary"
+                    style={{ padding: '0.75rem 1.25rem' }}
+                  >
+                    Verify
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSendOtp}
+                    disabled={!email || loading}
+                    className="auth-btn-primary"
+                    style={{ padding: '0.75rem 1.25rem' }}
+                  >
+                    Send OTP
+                  </button>
+                )}
+              </div>
 
-        {error && <p className="text-red-400 text-center text-sm">{error}</p>}
+              {otpSent && !emailVerified && (
+                <div style={{ textAlign: 'right' }}>
+                  <button
+                    onClick={handleSendOtp}
+                    disabled={timer > 0}
+                    className="auth-link"
+                  >
+                    {timer > 0 ? `Resend in ${timer}s` : "Resend OTP"}
+                  </button>
+                </div>
+              )}
 
-        <p className="text-center text-sm">
-          <Link to="/" className="text-blue-400">Login</Link>
-        </p>
+              <div className="form-group">
+                <label className="form-label">Username</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Enter your name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={!emailVerified}
+                  style={{ opacity: emailVerified ? 1 : 0.4 }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={!emailVerified}
+                  style={{ opacity: emailVerified ? 1 : 0.4 }}
+                />
+              </div>
+
+              {error && <p className="auth-error">{error}</p>}
+
+              <button
+                onClick={handleRegister}
+                disabled={!emailVerified || !name || !password || loading}
+                className="auth-btn-primary"
+              >
+                {loading ? "Creating..." : "Create Account"}
+              </button>
+
+              <p className="auth-text">
+                Already have an account? <Link to="/" className="auth-link">Login</Link>
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Background Effects */}
+      <div className="hero-glow glow-1"></div>
+      <div className="hero-glow glow-2"></div>
     </div>
   );
 }

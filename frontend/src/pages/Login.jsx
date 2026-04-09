@@ -1,13 +1,14 @@
-import { useState, useContext } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { AuthContext } from "../context/AuthContext";
 import { connectSocket } from "../services/socket";
+import { useContext } from "react";
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [step, setStep] = useState("login"); // login | verify
+  const [step, setStep] = useState("login");
   const [otp, setOtp] = useState("");
   const [userId, setUserId] = useState("");
   const [error, setError] = useState("");
@@ -19,11 +20,7 @@ function Login() {
     setError("");
 
     try {
-      const res = await api.post("/auth/login", {
-        email,
-        password
-      });
-
+      const res = await api.post("/auth/login", { email, password });
       login(res.data.user, res.data.token);
       connectSocket(res.data.token);
       navigate("/dashboard");
@@ -46,11 +43,7 @@ function Login() {
     setError("");
 
     try {
-      const res = await api.post("/auth/verify", {
-        userId,
-        otp
-      });
-
+      const res = await api.post("/auth/verify", { userId, otp });
       login(res.data.user, res.data.token);
       navigate("/dashboard");
     } catch (err) {
@@ -69,78 +62,248 @@ function Login() {
 
   if (step === "verify") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-        <form onSubmit={handleVerify} className="bg-gray-800 p-8 rounded-xl w-96 space-y-4">
-          <h2 className="text-2xl font-bold text-center">Verify Email</h2>
-          <p className="text-gray-400 text-sm text-center">Enter the 6-digit OTP sent to your email</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-900">
+        <div className="auth-card">
+          <h2 className="auth-title">Verify Email</h2>
+          <p className="auth-subtitle">Enter the 6-digit OTP sent to your email</p>
           
           <input
             type="text"
             placeholder="Enter OTP"
-            className="w-full p-2 rounded bg-gray-700 outline-none text-center text-2xl tracking-widest"
+            className="auth-input text-center text-2xl tracking-widest"
             value={otp}
             onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
             maxLength={6}
             required
           />
           
-          {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+          {error && <p className="auth-error">{error}</p>}
           
-          <button className="w-full bg-green-600 p-2 rounded hover:bg-green-700 transition">
+          <button className="auth-btn-primary" onClick={handleVerify}>
             Verify
           </button>
           
-          <button type="button" onClick={handleResend} className="w-full text-blue-400 text-sm hover:underline">
+          <button type="button" className="auth-link" onClick={handleResend}>
             Resend OTP
           </button>
           
-          <p className="text-sm text-center">
-            <button type="button" onClick={() => setStep("login")} className="text-gray-400">Back to Login</button>
+          <p className="auth-text">
+            <button type="button" className="auth-link" onClick={() => setStep("login")}>
+              Back to Login
+            </button>
           </p>
-        </form>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-      <div className="text-center mb-8">
-        <div className="text-6xl mb-4">💸</div>
-        <h1 className="text-4xl font-bold text-green-400">SplitNChill</h1>
-        <p className="text-gray-400 mt-2">Split expenses with friends easily</p>
-      </div>
-      <form
-        onSubmit={handleLogin}
-        className="bg-gray-800 p-8 rounded-xl w-96 space-y-4 ml-8"
-      >
-        <h2 className="text-2xl font-bold text-center">Login</h2>
+    <div className="landing-wrapper">
+      {/* Header */}
+      <header className="landing-header">
+        <div className="header-logo">
+          <span className="logo-icon">💸</span>
+          <span className="logo-text">SplitNChill</span>
+        </div>
+        
+        <nav className="header-nav">
+          <a href="#features" className="nav-link">Features</a>
+          <a href="#how-it-works" className="nav-link">How It Works</a>
+          <a href="#pricing" className="nav-link">Pricing</a>
+          <a href="#about" className="nav-link">About</a>
+        </nav>
+        
+        <div className="header-actions">
+          <Link to="/login" className="btn-outline">Login</Link>
+          <Link to="/register" className="btn-primary">Sign Up</Link>
+        </div>
+      </header>
 
-        <input
-          type="email"
-          placeholder="Email"
-          className="w-full p-2 rounded bg-gray-700"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+      {/* Hero Section */}
+      <section className="hero-section">
+        <div className="hero-container">
+          {/* Left - Content */}
+          <div className="hero-content">
+            <h1 className="hero-title">
+              Split expenses.<br />
+              <span className="gradient-text">Chat. Chill.</span>
+            </h1>
+            <p className="hero-subtitle">
+              Track shared expenses with friends in real-time conversations. 
+              No more awkward money talks.
+            </p>
+            <div className="hero-buttons">
+              <button className="btn-primary btn-lg" onClick={() => navigate('/register')}>
+                Get Started
+              </button>
+              <button className="btn-outline btn-lg">
+                Live Demo
+              </button>
+            </div>
+            <p className="hero-trusted">
+              💪 Trusted by friends groups everywhere
+            </p>
+          </div>
 
-        <input
-          type="password"
-          placeholder="Password"
-          className="w-full p-2 rounded bg-gray-700"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+          {/* Center - Mockup */}
+          <div className="hero-mockup">
+            <div className="chat-preview">
+              <div className="chat-preview-header">
+                <span>👥 Trip Squad</span>
+                <span className="text-xs text-gray-400">4 members</span>
+              </div>
+              <div className="chat-messages">
+                <div className="chat-bubble sent">
+                  Hey guys! Let's plan the weekend trip 🍕
+                </div>
+                <div className="chat-bubble received">
+                  Sure! Count me in 🎉
+                </div>
+                <div className="chat-bubble expense">
+                  <div className="expense-icon">💰</div>
+                  <div className="expense-text">
+                    <strong>Rahul</strong> added <strong>₹2,500</strong> for dinner
+                    <span className="expense-split">Split equally among 4</span>
+                  </div>
+                </div>
+                <div className="chat-bubble received">
+                  Cool! Who's paying for what? 🧾
+                </div>
+              </div>
+            </div>
+            <div className="floating-card card-1">
+              <span className="card-icon">⚖️</span>
+              <span>Equal split: ₹625 each</span>
+            </div>
+            <div className="floating-card card-2">
+              <span className="card-icon">📊</span>
+              <span>Total: ₹8,500</span>
+            </div>
+          </div>
 
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+          {/* Right - Auth Card */}
+          <div className="hero-auth">
+            <div className="auth-card glass">
+              <div className="auth-tabs">
+                <button 
+                  className={`auth-tab ${step === 'login' ? 'active' : ''}`}
+                  onClick={() => setStep('login')}
+                >
+                  Login
+                </button>
+                <button 
+                  className={`auth-tab ${step === 'register' ? 'active' : ''}`}
+                  onClick={() => navigate('/register')}
+                >
+                  Register
+                </button>
+              </div>
 
-        <button className="w-full bg-blue-600 p-2 rounded hover:bg-blue-700">
-          Login
-        </button>
+              <form onSubmit={handleLogin} className="auth-form">
+                <div className="form-group">
+                  <label className="form-label">Email</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
 
-        <p className="text-sm text-center">
-          No account? <Link to="/register" className="text-blue-400">Register</Link>
+                <div className="form-group">
+                  <label className="form-label">Password</label>
+                  <input
+                    type="password"
+                    className="form-input"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {error && <p className="auth-error">{error}</p>}
+
+                <button type="submit" className="auth-btn-primary w-full">
+                  Continue
+                </button>
+
+                <p className="auth-text">
+                  No account? <Link to="/register" className="auth-link">Sign up</Link>
+                </p>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {/* Background Effects */}
+        <div className="hero-glow glow-1"></div>
+        <div className="hero-glow glow-2"></div>
+      </section>
+
+      {/* Features Section */}
+      <section id="features" className="features-section">
+        <h2 className="section-title">Everything you need to split expenses</h2>
+        <p className="section-subtitle">
+          Smart features that make splitting expenses with friends effortless
         </p>
-      </form>
+        
+        <div className="features-grid">
+          <div className="feature-card">
+            <div className="feature-icon">💬</div>
+            <h3>Chat-based Tracking</h3>
+            <p>Add expenses directly in group chats. Everything stays in one place.</p>
+          </div>
+          
+          <div className="feature-card">
+            <div className="feature-icon">⚖️</div>
+            <h3>Auto Split</h3>
+            <p>Automatically calculate who owes what with equal or custom splits.</p>
+          </div>
+          
+          <div className="feature-card">
+            <div className="feature-icon">📊</div>
+            <h3>Expense Summaries</h3>
+            <p>Beautiful summaries show exactly where money goes.</p>
+          </div>
+          
+          <div className="feature-card">
+            <div className="feature-icon">🔔</div>
+            <h3>Smart Reminders</h3>
+            <p>Never forget who owes you with automatic reminders.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="landing-footer">
+        <div className="footer-content">
+          <div className="footer-left">
+            <div className="footer-logo">
+              <span className="logo-icon">💸</span>
+              <span className="logo-text">SplitNChill</span>
+            </div>
+            <p className="footer-tagline">Split smart. Stay chill.</p>
+          </div>
+          
+          <div className="footer-center">
+            <a href="#privacy">Privacy</a>
+            <a href="#terms">Terms</a>
+            <a href="#contact">Contact</a>
+          </div>
+          
+          <div className="footer-right">
+            <a href="#" className="social-icon">🐦</a>
+            <a href="#" className="social-icon">📸</a>
+            <a href="#" className="social-icon">💼</a>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          <p>© 2024 SplitNChill. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   );
 }
