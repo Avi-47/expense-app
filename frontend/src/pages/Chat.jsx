@@ -43,10 +43,7 @@ function Chat() {
   const { user } = useContext(AuthContext);
   const { userId } = useParams();
 
-  const currentUser = user || (() => {
-    const stored = localStorage.getItem("user");
-    return stored ? JSON.parse(stored) : null;
-  })();
+  const currentUser = user;
 
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
@@ -90,7 +87,7 @@ function Chat() {
     let currentUserId = null;
     try {
       const stored = localStorage.getItem("user");
-      if (stored) {
+      if (stored && stored !== "undefined") {
         const parsed = JSON.parse(stored);
         currentUserId = parsed?.id || parsed?._id || null;
       }

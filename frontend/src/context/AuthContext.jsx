@@ -3,15 +3,24 @@ import { createContext, useState, useEffect } from "react";
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+
+  useEffect(() => {
     try {
-      const stored = localStorage.getItem("user");
-      return stored && stored !== "undefined" ? JSON.parse(stored) : null;
-    } catch {
-      return null;
+      const storedUser = localStorage.getItem("user");
+      const storedToken = localStorage.getItem("token");
+      
+      if (storedUser && storedUser !== "undefined") {
+        setUser(JSON.parse(storedUser));
+      }
+      if (storedToken && storedToken !== "undefined") {
+        setToken(storedToken);
+      }
+    } catch (e) {
+      console.log("No stored auth data");
     }
-  });
-  const [token, setToken] = useState(() => localStorage.getItem("token"));
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -24,16 +33,14 @@ export const AuthProvider = ({ children }) => {
   const login = (userData, jwt) => {
     setUser(userData);
     setToken(jwt);
-
-    // STORE USER
     localStorage.setItem("user", JSON.stringify(userData));
   };
 
   const logout = () => {
     setUser(null);
     setToken(null);
-
     localStorage.removeItem("user");
+    localStorage.removeItem("token");
   };
 
   return (

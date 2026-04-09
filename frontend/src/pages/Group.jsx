@@ -44,10 +44,7 @@ function Group() {
   const { groupId } = useParams();
   const navigate = useNavigate();
   const { token, user } = useContext(AuthContext);
-  const currentUser = user || (() => {
-    const stored = localStorage.getItem("user");
-    return stored ? JSON.parse(stored) : null;
-  })();
+  const currentUser = user;
 
   const [socket, setSocket] = useState(null);  
   
@@ -340,7 +337,7 @@ function Group() {
     let currentUserId = null;
     try {
       const stored = localStorage.getItem("user");
-      if (stored) {
+      if (stored && stored !== "undefined") {
         const parsed = JSON.parse(stored);
         currentUserId = parsed?.id || parsed?._id || null;
       }
