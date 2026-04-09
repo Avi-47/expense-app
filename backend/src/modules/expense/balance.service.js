@@ -1,17 +1,11 @@
-const { redisClient } = require("../../config/redis");
+const Balance = require("./balance.model");
 
-const getBalanceKey = (groupId) => `group:${String(groupId)}:balances`;
+const getBalanceKey = (groupId) => String(groupId);
 
-// ===============================
-// UPDATE BALANCES (supports multi-payer)
-// ===============================
 exports.updateBalances = async (groupId, splits) => {
   try {
-    const key = getBalanceKey(groupId);
-    
-    console.log("=== UPDATE BALANCES DEBUG ===");
+    console.log("=== UPDATE BALANCES (MongoDB) ===");
     console.log("Group ID:", groupId);
-    console.log("Redis Key:", key);
     
     const netChanges = {};
     
@@ -41,7 +35,8 @@ exports.updateBalances = async (groupId, splits) => {
     creditors.sort((a, b) => b.amount - a.amount);
     debtors.sort((a, b) => b.amount - a.amount);
     
-    console.log("Creditors:", creditors, "Debtors:", debtors);
+    console.log("Creditors:", creditors);
+    console.log("Debtors:", debtors);
     
     let i = 0, j = 0;
     while (i < creditors.length && j < debtors.length) {
@@ -51,14 +46,16 @@ exports.updateBalances = async (groupId, splits) => {
       const amount = Math.min(creditor.amount, debtor.amount);
       
       if (amount > 0) {
-        const pairKey = `${debtor.userId}:${creditor.userId}`;
+        const fromUserId = debtor.userId;
+        const toUserId = creditor.userId;
         
-        const existing = await redisClient.hGet(key, pairKey);
+        console.log(`Setting balance: ${fromUserId} owes ${toUserId} = ${amount}`);
         
-        console.log(`Setting balance: ${pairKey} = ${amount}, existing: ${existing}`);
-        
-        const updated = existing ? parseFloat(existing) + amount : amount;
-        await redisClient.hSet(key, pairKey, updated);
+        await Balance.findOneAndUpdate(
+          { groupId, fromUser: fromUserId, toUser: toUserId },
+          { amount },
+          { upsert: true, new: true }
+        );
       }
       
       creditor.amount -= amount;
@@ -74,162 +71,64 @@ exports.updateBalances = async (groupId, splits) => {
   }
 };
 
-// ===============================
-// REMOVE EXPENSE FROM BALANCES
-// ===============================
 exports.removeExpenseBalances = async (groupId, splits) => {
-  const key = getBalanceKey(groupId);
-
-  const netChanges = {};
-  
-  for (const split of splits) {
-    const userId = split.user.toString();
-    const paid = split.paidAmount || 0;
-    const owed = split.amount || 0;
-    const net = paid - owed;
+  try {
+    const netChanges = {};
     
-    if (!netChanges[userId]) {
-      netChanges[userId] = 0;
+    for (const split of splits) {
+      const userId = String(split.user);
+      const paid = Number(split.paidAmount) || 0;
+      const owed = Number(split.amount) || 0;
+      const net = paid - owed;
+      
+      netChanges[userId] = (netChanges[userId] || 0) + net;
     }
-    netChanges[userId] += net;
-  }
 
-  for (const userId in netChanges) {
-    if (netChanges[userId] === 0) continue;
+    const creditors = [];
+    const debtors = [];
     
-    for (const otherId in netChanges) {
-      if (userId === otherId) continue;
-      
-      const userNet = netChanges[userId];
-      const otherNet = netChanges[otherId];
-      
-      if (userNet < 0 && otherNet > 0) {
-        const amount = Math.min(-userNet, otherNet);
-        
-        const pairKey = `${userId}:${otherId}`;
-        const reverseKey = `${otherId}:${userId}`;
-        
-        const existing = await redisClient.hGet(key, pairKey);
-        const reverseExisting = await redisClient.hGet(key, reverseKey);
-        
-        if (reverseExisting) {
-          const net = parseFloat(reverseExisting) - amount;
-          
-          if (net > 0) {
-            await redisClient.hSet(key, reverseKey, net);
-          } else if (net < 0) {
-            await redisClient.hDel(key, reverseKey);
-            await redisClient.hSet(key, pairKey, Math.abs(net));
-          } else {
-            await redisClient.hDel(key, reverseKey);
-          }
-        } else {
-          const updated = existing ? parseFloat(existing) + amount : amount;
-          await redisClient.hSet(key, pairKey, updated);
-        }
-        
-        netChanges[userId] += amount;
-        netChanges[otherId] -= amount;
+    for (const userId in netChanges) {
+      if (netChanges[userId] > 0.01) {
+        creditors.push({ userId, amount: netChanges[userId] });
+      } else if (netChanges[userId] < -0.01) {
+        debtors.push({ userId, amount: -netChanges[userId] });
       }
     }
+    
+    let i = 0, j = 0;
+    while (i < creditors.length && j < debtors.length) {
+      const creditor = creditors[i];
+      const debtor = debtors[j];
+      
+      const amount = Math.min(creditor.amount, debtor.amount);
+      
+      if (amount > 0) {
+        await Balance.findOneAndDelete({
+          groupId,
+          fromUser: debtor.userId,
+          toUser: creditor.userId
+        });
+      }
+      
+      creditor.amount -= amount;
+      debtor.amount -= amount;
+      
+      if (creditor.amount < 0.01) i++;
+      if (debtor.amount < 0.01) j++;
+    }
+  } catch (error) {
+    console.error("Error removing balances:", error);
   }
 };
 
-// ===============================
-// GET ALL BALANCES
-// ===============================
 exports.getBalances = async (groupId) => {
-  const key = getBalanceKey(groupId);
-  return await redisClient.hGetAll(key);
-};
-
-// ===============================
-// GET USER SPECIFIC BALANCES
-// ===============================
-exports.getUserBalances = async (groupId, userId) => {
-
-  const key = getBalanceKey(groupId);
-  const allBalances = await redisClient.hGetAll(key);
-
+  const balances = await Balance.find({ groupId });
   const result = {};
-
-  for (const pair in allBalances) {
-
-    const [creditor, debtor] = pair.split(":");
-    const amount = parseFloat(allBalances[pair]);
-
-    if (creditor === userId) {
-      result[debtor] = { type: "owes_you", amount };
-    }
-
-    if (debtor === userId) {
-      result[creditor] = { type: "you_owe", amount };
-    }
+  
+  for (const bal of balances) {
+    const key = `${bal.fromUser}:${bal.toUser}`;
+    result[key] = bal.amount;
   }
-
+  
   return result;
-};
-
-// ===============================
-// SIMPLIFY DEBTS
-// ===============================
-exports.simplifyDebts = async (groupId) => {
-
-  const key = getBalanceKey(groupId);
-  const raw = await redisClient.hGetAll(key);
-
-  const net = {};
-
-  for (const pair in raw) {
-
-    const [creditor, debtor] = pair.split(":");
-    const amount = parseFloat(raw[pair]);
-
-    if (!net[creditor]) net[creditor] = 0;
-    if (!net[debtor]) net[debtor] = 0;
-
-    net[creditor] += amount;
-    net[debtor] -= amount;
-  }
-
-  const creditors = [];
-  const debtors = [];
-
-  for (const user in net) {
-    if (net[user] > 0) {
-      creditors.push({ user, amount: net[user] });
-    } 
-    else if (net[user] < 0) {
-      debtors.push({ user, amount: -net[user] });
-    }
-  }
-
-  creditors.sort((a, b) => b.amount - a.amount);
-  debtors.sort((a, b) => b.amount - a.amount);
-
-  const simplified = [];
-
-  let i = 0, j = 0;
-
-  while (i < creditors.length && j < debtors.length) {
-
-    const settleAmount = Math.min(
-      creditors[i].amount,
-      debtors[j].amount
-    );
-
-    simplified.push({
-      from: debtors[j].user,
-      to: creditors[i].user,
-      amount: settleAmount
-    });
-
-    creditors[i].amount -= settleAmount;
-    debtors[j].amount -= settleAmount;
-
-    if (creditors[i].amount === 0) i++;
-    if (debtors[j].amount === 0) j++;
-  }
-
-  return simplified;
 };
