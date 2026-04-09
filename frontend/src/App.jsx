@@ -2,7 +2,6 @@ import { useState } from 'react'
 import './App.css'
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
-import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Group from "./pages/Group";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -14,7 +13,6 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Login />} />
-        <Route path="/register" element={<Register />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}/>
         <Route path="/group/:groupId" element={<ProtectedRoute><Group /></ProtectedRoute>}/>
         <Route path="/chat/:userId" element={<Chat />} />

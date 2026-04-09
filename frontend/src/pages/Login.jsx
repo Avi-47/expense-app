@@ -1,9 +1,8 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useContext } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import api from "../services/api";
 import { AuthContext } from "../context/AuthContext";
 import { connectSocket } from "../services/socket";
-import { useContext } from "react";
 
 function Login() {
   const [email, setEmail] = useState("");
@@ -62,36 +61,48 @@ function Login() {
 
   if (step === "verify") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <div className="auth-card">
-          <h2 className="auth-title">Verify Email</h2>
-          <p className="auth-subtitle">Enter the 6-digit OTP sent to your email</p>
-          
-          <input
-            type="text"
-            placeholder="Enter OTP"
-            className="auth-input text-center text-2xl tracking-widest"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            maxLength={6}
-            required
-          />
-          
-          {error && <p className="auth-error">{error}</p>}
-          
-          <button className="auth-btn-primary" onClick={handleVerify}>
-            Verify
-          </button>
-          
-          <button type="button" className="auth-link" onClick={handleResend}>
-            Resend OTP
-          </button>
-          
-          <p className="auth-text">
-            <button type="button" className="auth-link" onClick={() => setStep("login")}>
-              Back to Login
-            </button>
-          </p>
+      <div className="landing-wrapper">
+        <header className="landing-header">
+          <div className="header-logo">
+            <span className="logo-icon">💸</span>
+            <span className="logo-text">SplitNChill</span>
+          </div>
+        </header>
+
+        <div className="hero-section" style={{ paddingTop: '10rem' }}>
+          <div className="hero-auth">
+            <div className="auth-card glass">
+              <h2 className="auth-title" style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem' }}>Verify Email</h2>
+              <p className="auth-subtitle" style={{ textAlign: 'center', marginBottom: '1.5rem' }}>Enter the 6-digit OTP sent to your email</p>
+              
+              <input
+                type="text"
+                placeholder="Enter OTP"
+                className="auth-input text-center"
+                style={{ textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.5rem' }}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                maxLength={6}
+                required
+              />
+              
+              {error && <p className="auth-error">{error}</p>}
+              
+              <button className="auth-btn-primary" onClick={handleVerify}>
+                Verify
+              </button>
+              
+              <button type="button" className="auth-link w-full" onClick={handleResend}>
+                Resend OTP
+              </button>
+              
+              <p className="auth-text">
+                <button type="button" className="auth-link" onClick={() => setStep("login")}>
+                  Back to Login
+                </button>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -114,8 +125,8 @@ function Login() {
         </nav>
         
         <div className="header-actions">
-          <Link to="/login" className="btn-outline">Login</Link>
-          <Link to="/register" className="btn-primary">Sign Up</Link>
+          <Link to="/" className="btn-outline">Login</Link>
+          <Link to="/" className="btn-primary">Sign Up</Link>
         </div>
       </header>
 
@@ -133,7 +144,7 @@ function Login() {
               No more awkward money talks.
             </p>
             <div className="hero-buttons">
-              <button className="btn-primary btn-lg" onClick={() => navigate('/register')}>
+              <button className="btn-primary btn-lg">
                 Get Started
               </button>
               <button className="btn-outline btn-lg">
@@ -181,7 +192,7 @@ function Login() {
             </div>
           </div>
 
-          {/* Right - Auth Card */}
+          {/* Right - Auth Card with Tabs */}
           <div className="hero-auth">
             <div className="auth-card glass">
               <div className="auth-tabs">
@@ -193,47 +204,51 @@ function Login() {
                 </button>
                 <button 
                   className={`auth-tab ${step === 'register' ? 'active' : ''}`}
-                  onClick={() => navigate('/register')}
+                  onClick={() => setStep('register')}
                 >
                   Register
                 </button>
               </div>
 
-              <form onSubmit={handleLogin} className="auth-form">
-                <div className="form-group">
-                  <label className="form-label">Email</label>
-                  <input
-                    type="email"
-                    className="form-input"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
+              {step === 'login' ? (
+                <form onSubmit={handleLogin} className="auth-form">
+                  <div className="form-group">
+                    <label className="form-label">Email</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
 
-                <div className="form-group">
-                  <label className="form-label">Password</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
+                  <div className="form-group">
+                    <label className="form-label">Password</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
 
-                {error && <p className="auth-error">{error}</p>}
+                  {error && <p className="auth-error">{error}</p>}
 
-                <button type="submit" className="auth-btn-primary w-full">
-                  Continue
-                </button>
+                  <button type="submit" className="auth-btn-primary w-full">
+                    Continue
+                  </button>
 
-                <p className="auth-text">
-                  No account? <Link to="/register" className="auth-link">Sign up</Link>
-                </p>
-              </form>
+                  <p className="auth-text">
+                    No account? <button type="button" className="auth-link" onClick={() => setStep('register')}>Sign up</button>
+                  </p>
+                </form>
+              ) : (
+                <RegisterForm onSwitchToLogin={() => setStep('login')} />
+              )}
             </div>
           </div>
         </div>
@@ -304,6 +319,168 @@ function Login() {
           <p>© 2024 SplitNChill. All rights reserved.</p>
         </div>
       </footer>
+    </div>
+  );
+}
+
+function RegisterForm({ onSwitchToLogin }) {
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [tempToken, setTempToken] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [timer, setTimer] = useState(0);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (timer > 0) {
+      const t = setTimeout(() => setTimer(timer - 1), 1000);
+      return () => clearTimeout(t);
+    }
+  }, [timer]);
+
+  const handleSendOtp = async () => {
+    if (!email) return;
+    setError("");
+    setLoading(true);
+    try {
+      await api.post("/auth/send-otp", { email });
+      setOtpSent(true);
+      setTimer(60);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to send OTP");
+    }
+    setLoading(false);
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otp || otp.length !== 6) return;
+    setError("");
+    setLoading(true);
+    try {
+      const res = await api.post("/auth/verify-otp", { email, otp });
+      setTempToken(res.data.tempToken);
+      setEmailVerified(true);
+    } catch (err) {
+      setError(err.response?.data?.message || "Invalid OTP");
+    }
+    setLoading(false);
+  };
+
+  const handleRegister = async () => {
+    if (!name || !password) return;
+    setError("");
+    setLoading(true);
+    try {
+      const res = await api.post("/auth/complete-register", { tempToken, name, password });
+      localStorage.setItem("token", res.data.token);
+      localStorage.setItem("user", JSON.stringify(res.data.user));
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.response?.data?.message || "Registration failed");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="auth-form">
+      <div className="form-group">
+        <label className="form-label">Email</label>
+        <input
+          type="email"
+          className="form-input"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={otpSent}
+        />
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          type="text"
+          className="form-input flex-1"
+          placeholder="Enter OTP"
+          value={otp}
+          onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          maxLength={6}
+        />
+        {otpSent ? (
+          <button
+            onClick={handleVerifyOtp}
+            disabled={otp.length !== 6 || loading}
+            className="auth-btn-primary"
+            style={{ padding: '0.75rem' }}
+          >
+            Verify
+          </button>
+        ) : (
+          <button
+            onClick={handleSendOtp}
+            disabled={!email || loading}
+            className="auth-btn-primary"
+            style={{ padding: '0.75rem' }}
+          >
+            Send
+          </button>
+        )}
+      </div>
+
+      {otpSent && !emailVerified && (
+        <div style={{ textAlign: 'right' }}>
+          <button
+            onClick={handleSendOtp}
+            disabled={timer > 0}
+            className="auth-link"
+          >
+            {timer > 0 ? `Resend in ${timer}s` : "Resend OTP"}
+          </button>
+        </div>
+      )}
+
+      <div className="form-group">
+        <label className="form-label">Username</label>
+        <input
+          type="text"
+          className="form-input"
+          placeholder="Enter your name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={!emailVerified}
+          style={{ opacity: emailVerified ? 1 : 0.4 }}
+        />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Password</label>
+        <input
+          type="password"
+          className="form-input"
+          placeholder="••••••••"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          disabled={!emailVerified}
+          style={{ opacity: emailVerified ? 1 : 0.4 }}
+        />
+      </div>
+
+      {error && <p className="auth-error">{error}</p>}
+
+      <button
+        onClick={handleRegister}
+        disabled={!emailVerified || !name || !password || loading}
+        className="auth-btn-primary"
+      >
+        {loading ? "Creating..." : "Create Account"}
+      </button>
+
+      <p className="auth-text">
+        Already have an account? <button type="button" className="auth-link" onClick={onSwitchToLogin}>Login</button>
+      </p>
     </div>
   );
 }
