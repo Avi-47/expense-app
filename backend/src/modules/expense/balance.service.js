@@ -9,6 +9,10 @@ exports.updateBalances = async (groupId, splits) => {
   try {
     const key = getBalanceKey(groupId);
     
+    console.log("=== UPDATE BALANCES DEBUG ===");
+    console.log("Group ID:", groupId);
+    console.log("Redis Key:", key);
+    
     const netChanges = {};
     
     for (const split of splits) {
@@ -17,6 +21,7 @@ exports.updateBalances = async (groupId, splits) => {
       const owed = Number(split.amount) || 0;
       const net = paid - owed;
       
+      console.log(`User ${userId}: paid=${paid}, owed=${owed}, net=${net}`);
       netChanges[userId] = (netChanges[userId] || 0) + net;
     }
 

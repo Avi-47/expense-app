@@ -71,19 +71,31 @@ exports.getBalances = async (req, res) => {
 
     const allBalances = await getBalances(groupId);
     
+    console.log("=== GET BALANCES DEBUG ===");
+    console.log("Group ID:", groupId);
+    console.log("Current User ID:", currentUserId);
+    console.log("All Redis Balances:", allBalances);
+    
     const balances = {};
     
     for (const pair in allBalances) {
       const [creditor, debtor] = pair.split(":");
       const amount = parseFloat(allBalances[pair]);
       
+      console.log(`Pair: ${pair}, creditor: ${creditor}, debtor: ${debtor}, amount: ${amount}`);
+      
       if (creditor === currentUserId) {
         balances[debtor] = amount;
+        console.log(`  -> ${debtor} owes you ${amount}`);
       } else if (debtor === currentUserId) {
         balances[creditor] = -amount;
+        console.log(`  -> you owe ${creditor} ${amount}`);
       }
     }
 
+    console.log("Final balances to send:", balances);
+    console.log("=========================");
+    
     res.json({ balances });
 
   } catch (err) {
