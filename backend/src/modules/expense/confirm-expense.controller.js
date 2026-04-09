@@ -132,8 +132,6 @@ exports.confirmExpense = async (req, res) => {
 
     populatedExpense.settlements = settlements;
 
-    console.log("Calling updateBalances with splits:", JSON.stringify(splits, (key, val) => typeof val === 'object' && val !== null ? JSON.stringify(val) : val, 2));
-    
     await updateBalances(groupId, splits);
 
     const io = getIO();

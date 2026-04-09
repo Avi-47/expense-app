@@ -6,75 +6,66 @@ const getBalanceKey = (groupId) => `group:${String(groupId)}:balances`;
 // UPDATE BALANCES (supports multi-payer)
 // ===============================
 exports.updateBalances = async (groupId, splits) => {
-  const key = getBalanceKey(groupId);
-  
-  const netChanges = {};
-  
-  for (const split of splits) {
-    const userId = split.user.toString();
-    const paid = split.paidAmount || 0;
-    const owed = split.amount || 0;
-    const net = paid - owed;
+  try {
+    const key = getBalanceKey(groupId);
     
-    netChanges[userId] = (netChanges[userId] || 0) + net;
-  }
-
-  console.log("Net changes:", netChanges);
-  
-  const creditors = [];
-  const debtors = [];
-  
-  for (const userId in netChanges) {
-    if (netChanges[userId] > 0.01) {
-      creditors.push({ userId, amount: netChanges[userId] });
-    } else if (netChanges[userId] < -0.01) {
-      debtors.push({ userId, amount: -netChanges[userId] });
+    const netChanges = {};
+    
+    for (const split of splits) {
+      const userId = String(split.user);
+      const paid = Number(split.paidAmount) || 0;
+      const owed = Number(split.amount) || 0;
+      const net = paid - owed;
+      
+      netChanges[userId] = (netChanges[userId] || 0) + net;
     }
-  }
-  
-  creditors.sort((a, b) => b.amount - a.amount);
-  debtors.sort((a, b) => b.amount - a.amount);
-  
-  console.log("Creditors:", creditors, "Debtors:", debtors);
-  
-  let i = 0, j = 0;
-  while (i < creditors.length && j < debtors.length) {
-    const creditor = creditors[i];
-    const debtor = debtors[j];
+
+    console.log("Net changes:", netChanges);
     
-    const amount = Math.min(creditor.amount, debtor.amount);
+    const creditors = [];
+    const debtors = [];
     
-    if (amount > 0) {
-      const pairKey = `${debtor.userId}:${creditor.userId}`;
-      const reverseKey = `${creditor.userId}:${debtor.userId}`;
-      
-      const existing = await redisClient.hGet(key, pairKey);
-      const reverseExisting = await redisClient.hGet(key, reverseKey);
-      
-      console.log(`Settling: ${debtor.userId} owes ${creditor.userId} ₹${amount}, existing: ${existing}, reverse: ${reverseExisting}`);
-      
-      if (reverseExisting) {
-        const net = parseFloat(reverseExisting) - amount;
-        
-        if (net > 0.01) {
-          await redisClient.hSet(key, reverseKey, net);
-        } else if (net < -0.01) {
-          await redisClient.hDel(key, reverseKey);
-          await redisClient.hSet(key, pairKey, Math.abs(net));
-        } else {
-          await redisClient.hDel(key, reverseKey);
-        }
-      } else {
-        const updated = existing ? parseFloat(existing) + amount : amount;
-        await redisClient.hSet(key, pairKey, updated);
+    for (const userId in netChanges) {
+      if (netChanges[userId] > 0.01) {
+        creditors.push({ userId, amount: netChanges[userId] });
+      } else if (netChanges[userId] < -0.01) {
+        debtors.push({ userId, amount: -netChanges[userId] });
       }
     }
     
-    creditor.amount -= amount;
-    debtor.amount -= amount;
+    creditors.sort((a, b) => b.amount - a.amount);
+    debtors.sort((a, b) => b.amount - a.amount);
     
-    if (creditor.amount < 0.01) i++;
-    if (debtor.amount < 0.01) j++;
+    console.log("Creditors:", creditors, "Debtors:", debtors);
+    
+    let i = 0, j = 0;
+    while (i < creditors.length && j < debtors.length) {
+      const creditor = creditors[i];
+      const debtor = debtors[j];
+      
+      const amount = Math.min(creditor.amount, debtor.amount);
+      
+      if (amount > 0) {
+        const pairKey = `${debtor.userId}:${creditor.userId}`;
+        
+        const existing = await redisClient.hGet(key, pairKey);
+        
+        console.log(`Setting balance: ${pairKey} = ${amount}, existing: ${existing}`);
+        
+        const updated = existing ? parseFloat(existing) + amount : amount;
+        await redisClient.hSet(key, pairKey, updated);
+      }
+      
+      creditor.amount -= amount;
+      debtor.amount -= amount;
+      
+      if (creditor.amount < 0.01) i++;
+      if (debtor.amount < 0.01) j++;
+    }
+    
+    console.log("Balance update complete");
+  } catch (error) {
+    console.error("Error updating balances:", error);
   }
 };
 

@@ -276,8 +276,6 @@ function Dashboard() {
         // Fetch balances for this group
         try {
           const balRes = await api.get(`/settlement/${chat._id}/balances`);
-          console.log("Balances received:", balRes.data.balances);
-          console.log("Group members:", groupMembers.map(m => ({ id: m._id, name: m.name })));
           setBalances(balRes.data.balances);
         } catch (e) {
           console.error("Error fetching balances:", e);
