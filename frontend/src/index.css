@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+/* Custom Scrollbar - thin and dark */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f0f1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
 /* Fix overflow on root elements */
 html, body {
   height: 100%;
@@ -681,9 +700,9 @@ html, body, #root {
   grid-template-columns: 1fr 1fr 1fr;
   gap: 3rem;
   max-width: 1400px;
+  min-height: 550px;
   margin: 0 auto;
   align-items: start;
-}
   align-items: center;
 }
 
@@ -847,22 +866,11 @@ html, body, #root {
   width: 100%;
   max-width: 380px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  min-height: 480px;
-  height: 480px;
+  min-height: 380px;
   overflow-y: auto;
-}
-
-.auth-card {
-  background: rgba(30, 30, 50, 0.7);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 2rem;
-  width: 100%;
-  max-width: 380px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.3);
 }
-
 .auth-card.glass {
   background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(59, 130, 246, 0.1));
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -930,19 +938,6 @@ html, body, #root {
   color: rgba(255, 255, 255, 0.3);
 }
 
-.auth-card {
-  background: rgba(30, 30, 50, 0.7);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 1.5rem;
-  width: 100%;
-  max-width: 380px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  min-height: 400px;
-}
-  color: rgba(255, 255, 255, 0.3);
-}
 
 .auth-btn-primary {
   padding: 0.5rem 1rem;
