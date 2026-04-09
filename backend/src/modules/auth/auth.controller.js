@@ -159,7 +159,7 @@ exports.searchUsers = async (req, res) => {
         { email: { $regex: q, $options: "i" } },
         { name: { $regex: q, $options: "i" } }
       ]
-    }).select("name email");
+    }).select("_id name email");
 
     res.json(users);
   } catch (err) {

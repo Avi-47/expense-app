@@ -1,5 +1,6 @@
 const Expense = require("../expense/expense.model");
 const mongoose = require("mongoose");
+const { getBalances, getUserBalances } = require("../expense/balance.service");
 
 exports.settlePayment = async (req, res) => {
   try {
@@ -62,40 +63,35 @@ exports.settlePayment = async (req, res) => {
 
 /* ===============================
    GET BALANCES
- ================================= */
+  ================================= */
 exports.getBalances = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const currentUser = req.user.id;
+    const currentUserId = String(req.user.id);
 
-    const expenses = await Expense.find({ groupId });
-
+    const allBalances = await getBalances(groupId);
+    
+    console.log("All balances from Redis:", allBalances);
+    console.log("Current user ID:", currentUserId);
+    
     const balances = {};
-
-    for (const expense of expenses) {
-      const payer = expense.paidBy.toString();
-
-      for (const split of expense.splits) {
-        const userId = split.user.toString();
-        const remaining = split.amount - split.paidAmount;
-
-        if (remaining <= 0) continue;
-        if (userId === payer) continue;
-
-        if (currentUser === payer) {
-          // others owe me
-          if (!balances[userId]) balances[userId] = 0;
-          balances[userId] += remaining;
-        }
-
-        if (currentUser === userId) {
-          // I owe payer
-          if (!balances[payer]) balances[payer] = 0;
-          balances[payer] -= remaining;
-        }
+    
+    for (const pair in allBalances) {
+      const [creditor, debtor] = pair.split(":");
+      const amount = parseFloat(allBalances[pair]);
+      
+      console.log(`Pair: ${pair}, creditor: ${creditor}, debtor: ${debtor}, amount: ${amount}`);
+      
+      if (creditor === currentUserId) {
+        balances[debtor] = amount;
+        console.log(`Setting ${debtor} = ${amount} (others owe me)`);
+      } else if (debtor === currentUserId) {
+        balances[creditor] = -amount;
+        console.log(`Setting ${creditor} = ${-amount} (I owe ${creditor})`);
       }
     }
 
+    console.log("Final balances:", balances);
     res.json({ balances });
 
   } catch (err) {

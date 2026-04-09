@@ -228,7 +228,7 @@ exports.getSidebarData = async (req, res) => {
     const groups = await Group.find({
       members: userId
     })
-      .select("name lastMessageAt lastMessage createdAt")
+      .select("name lastMessageAt lastMessage createdAt inviteToken")
       .sort({ lastMessageAt: -1, createdAt: -1 });
 
     const invites = await Invite.find({
@@ -402,6 +402,22 @@ exports.joinGroupByInvite = async (req, res) => {
       groupId: group._id
     });
 
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getInviteInfo = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const group = await Group.findOne({ inviteToken: token }).select("name");
+
+    if (!group) {
+      return res.status(404).json({ message: "Invalid invite link" });
+    }
+
+    res.json({ group });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

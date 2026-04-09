@@ -78,8 +78,45 @@ function Group() {
   const [inviteEmail, setInviteEmail] = useState("");
 
   const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearch, setShowSearch] = useState(false);
 
   const messagesContainerRef = useRef(null);
+
+  const handleSearchUsers = async (query) => {
+    setSearchQuery(query);
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    try {
+      const res = await api.get(`/auth/search?q=${query}`);
+      const currentMemberIds = members.map(m => m._id);
+      const filtered = res.data.filter(u => !currentMemberIds.includes(u._id));
+      setSearchResults(filtered);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const addUserToGroup = async (user) => {
+    try {
+      await api.post(`/groups/${groupId}/add-member`, { email: user.email });
+      setShowSearch(false);
+      setSearchQuery("");
+      setSearchResults([]);
+      fetchGroup();
+      fetchBalances();
+    } catch (err) {
+      alert(err.response?.data?.message || "Error adding member");
+    }
+  };
+
+  const copyGroupLink = () => {
+    navigator.clipboard.writeText(inviteLink);
+    alert("Group link copied!");
+  };
   const bottomRef = useRef(null);
 
   // Debug - log when component mounts
@@ -354,39 +391,23 @@ function Group() {
 
       <div className="group-main">
         <div className="group-header">
-          <button 
-            onClick={() => {
-              console.log("=== CLICKED TEST ===");
-              const c = messagesContainerRef.current;
-              if(c) { 
-                console.log("Container found, scrolling...");
-                c.scrollTop = 500; 
-                console.log("Scrolled to 500, scrollTop is now:", c.scrollTop);
-              } else {
-                console.log("NO CONTAINER FOUND");
-              }
-            }} 
-            className="bg-red-600 px-3 py-1 rounded text-white text-sm font-bold"
-          >
-            SCROLL TEST
-          </button>
-          <div className="flex items-center gap-3">
+          <div className="header-left">
             <button
               className="md:hidden"
               onClick={() => navigate("/dashboard")}
             >
               ←
             </button>
-            <h2
-              className="font-semibold cursor-pointer"
-              onClick={() => setShowInfo(true)}
-            >
-              {groupName}
-            </h2>
+            <div className="header-slab" onClick={() => setShowInfo(true)}>
+              <div className="header-avatar">
+                {groupName.charAt(0).toUpperCase()}
+              </div>
+              <h2 className="header-group-name">{groupName}</h2>
+            </div>
           </div>
           <button
             onClick={() => setShowInfo(true)}
-            className="text-gray-400 hover:text-white"
+            className="info-btn"
           >
             (i)
           </button>
@@ -434,50 +455,46 @@ function Group() {
       </div>
 
       {showInfo && (
-        <div className="hidden md:flex md:w-1/4 bg-gray-800 border-l border-gray-700 p-6">
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: '320px',
+          height: '100vh',
+          backgroundColor: '#1f2937',
+          borderLeft: '1px solid #374151',
+          padding: '1.5rem',
+          zIndex: 1000,
+          overflowY: 'auto',
+          boxSizing: 'border-box'
+        }}>
           <button
             onClick={() => setShowInfo(false)}
-            className="mb-4"
+            style={{ marginBottom: '1rem', padding: '0.5rem', background: 'red', color: 'white', border: 'none', borderRadius: '4px' }}
           >
             Close
           </button>
 
-          <h2 className="text-xl font-bold mb-4">{groupName}</h2>
-
-          {group?.inviteToken && (
-            <div className="mt-4">
-              <p className="text-sm text-gray-400">Invite Link</p>
-              <input
-                value={inviteLink}
-                readOnly
-                className="w-full bg-gray-700 p-2 rounded text-white"
-              />
-              <button
-                className="bg-blue-600 px-3 py-2 rounded mt-2 w-full"
-                onClick={() => navigator.clipboard.writeText(inviteLink)}
-              >
-                Copy Link
-              </button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+              fontWeight: 'bold',
+              fontSize: '1.5rem'
+            }}>
+              {groupName.charAt(0).toUpperCase()}
             </div>
-          )}
-
-          <div className="flex gap-2 mb-4">
-            <input
-              type="email"
-              placeholder="Enter member email"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              className="flex-1 p-2 bg-gray-700 rounded"
-            />
-            <button
-              onClick={handleInviteUser}
-              className="bg-green-600 px-3 rounded"
-            >
-              Add
-            </button>
+            <h2 className="text-xl font-bold">{groupName}</h2>
           </div>
 
           <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-gray-400 mb-2">Members</h3>
             {members.map((member) => {
             const rawAmount = balances?.[member._id] ?? 0;
             const isNegative = rawAmount < 0;
@@ -634,6 +651,55 @@ function Group() {
               >
                 Save
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSearch && (
+        <div className="modal-overlay">
+          <div className="modal-content search-modal">
+            <div className="modal-header">
+              <h3 className="text-lg font-bold">Add User to Group</h3>
+              <button
+                className="close-btn"
+                onClick={() => {
+                  setShowSearch(false);
+                  setSearchQuery("");
+                  setSearchResults([]);
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search by name or email..."
+              value={searchQuery}
+              onChange={(e) => handleSearchUsers(e.target.value)}
+              autoFocus
+            />
+            <div className="search-results">
+              {searchResults.length === 0 && searchQuery.length >= 2 && (
+                <p className="no-results">No users found</p>
+              )}
+              {searchResults.map(user => (
+                <div
+                  key={user._id}
+                  className="search-result-item"
+                  onClick={() => addUserToGroup(user)}
+                >
+                  <div className="user-avatar">
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="user-info">
+                    <span className="user-name">{user.name}</span>
+                    <span className="user-email">{user.email}</span>
+                  </div>
+                  <button className="add-btn">Add</button>
+                </div>
+              ))}
             </div>
           </div>
         </div>

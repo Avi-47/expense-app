@@ -1,5 +1,17 @@
 const mongoose = require("mongoose");
 
+const payerSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true
+  }
+});
+
 const splitSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -28,11 +40,12 @@ const expenseSchema = new mongoose.Schema(
       ref: "Group",
       required: true
     },
-    paidBy: {
+    createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true
     },
+    payers: [payerSchema],
     description: String,
     amount: Number,
     splits: [splitSchema]

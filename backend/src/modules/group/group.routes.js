@@ -16,7 +16,8 @@ const {
     sendInvite,
     respondInvite,
     getMyInvites,
-    getSidebarData
+    getSidebarData,
+    getInviteInfo
 } = require("./group.controller");
 
 // Create a new group
@@ -26,6 +27,7 @@ router.post("/", authMiddleware, createGroup);
 router.get("/invites", authMiddleware, getMyInvites);
 router.get("/sidebar", authMiddleware, getSidebarData);
 router.post("/join/:token", authMiddleware, joinGroupByInvite);
+router.get("/invite/:token/info", authMiddleware, getInviteInfo);
 router.post("/invite/:inviteId/respond", authMiddleware, respondInvite);
 
 // Join an existing group

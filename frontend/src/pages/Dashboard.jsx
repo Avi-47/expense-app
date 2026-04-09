@@ -13,6 +13,19 @@ function Dashboard() {
     return stored ? JSON.parse(stored) : null;
   })();
 
+  const getCurrentUserId = () => {
+    try {
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed?.id || parsed?._id || null;
+      }
+    } catch (e) {
+      console.error("Error parsing user:", e);
+    }
+    return null;
+  };
+
   const [groups, setGroups] = useState([]);
   const [conversations, setConversations] = useState([]); // Personal chat contacts
   const [invites, setInvites] = useState([]);
@@ -40,6 +53,8 @@ function Dashboard() {
     participants: [],
     includeSelf: true
   });
+  const [payerAmounts, setPayerAmounts] = useState({});
+  const [splitAmounts, setSplitAmounts] = useState({});
   const [selectAll, setSelectAll] = useState(false);
   const [groupMembers, setGroupMembers] = useState([]);
   const [balances, setBalances] = useState({});
@@ -47,6 +62,8 @@ function Dashboard() {
   const [menuOpenMsgId, setMenuOpenMsgId] = useState(null);
   const [showSlidePanel, setShowSlidePanel] = useState(false);
   const [showPhotoMenu, setShowPhotoMenu] = useState(false);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [addMemberSearch, setAddMemberSearch] = useState("");
 
   // Close slide panel when switching chats
   useEffect(() => {
@@ -133,7 +150,8 @@ function Dashboard() {
         lastMessage: group.lastMessage,
         lastMessageAt: group.lastMessageAt || group.createdAt,
         avatar: group.avatar || null,
-        balance: group.balance || null
+        balance: group.balance || null,
+        inviteToken: group.inviteToken || null
       });
     });
     
@@ -206,7 +224,33 @@ function Dashboard() {
       }
     });
 
-    return () => socket.off("message_received");
+    socket.on("expense_added", (expense) => {
+      if (chatType === 'group' && selectedChat?._id === expense.groupId) {
+        const payersList = expense.payers?.map(p => `${p.user?.name || 'Someone'} (₹${p.amount})`).join(', ') || "Someone";
+        const memberCount = expense.splits?.length || 0;
+        const amount = expense.amount;
+        
+        const expenseMsg = {
+          content: `💰 ${payersList} paid ₹${amount} for "${expense.description}" (split among ${memberCount})`,
+          sender: expense.createdBy?._id || expense.createdBy,
+          createdAt: expense.createdAt,
+          isExpense: true,
+          expenseData: expense
+        };
+        
+        setMessages(prev => [...prev, expenseMsg]);
+      }
+    });
+
+    socket.on("expense_deleted", ({ expenseId }) => {
+      setMessages(prev => prev.filter(m => !m.isExpense || m.expenseData?._id !== expenseId));
+    });
+
+    return () => {
+      socket.off("message_received");
+      socket.off("expense_added");
+      socket.off("expense_deleted");
+    };
   }, [selectedChat, chatType, socket]);
 
   // Fetch sidebar on mount
@@ -228,6 +272,16 @@ function Dashboard() {
         // Also fetch group details to get members
         const groupRes = await api.get(`/groups/${chat._id}`);
         setGroupMembers(groupRes.data.members || []);
+        
+        // Fetch balances for this group
+        try {
+          const balRes = await api.get(`/settlement/${chat._id}/balances`);
+          console.log("Balances received:", balRes.data.balances);
+          console.log("Group members:", groupMembers.map(m => ({ id: m._id, name: m.name })));
+          setBalances(balRes.data.balances);
+        } catch (e) {
+          console.error("Error fetching balances:", e);
+        }
         
         // Join the socket room for this group
         if (socket) {
@@ -398,13 +452,13 @@ function Dashboard() {
               }}
               className="bg-blue-600 px-3 py-1.5 rounded text-sm flex-1"
             >
-              🔍 Find
+              Find
             </button>
             <button
               onClick={() => setMode(mode === "createGroup" ? null : "createGroup")}
               className="bg-green-600 px-3 py-1.5 rounded text-sm flex-1"
             >
-              ➕ Create
+              Create
             </button>
           </div>
           
@@ -619,6 +673,95 @@ function Dashboard() {
                       </div>
                     )}
                   </div>
+
+                  {/* Add Member & Copy Link Buttons */}
+                  {chatType === 'group' && (
+                    <div className="px-6 pb-4" style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => {
+                          const link = `${window.location.origin}/invite/${selectedChat.inviteToken}`;
+                          navigator.clipboard.writeText(link);
+                          alert("Group link copied!");
+                        }}
+                        className="flex-1 bg-blue-600 text-white py-1 px-2 rounded text-sm font-medium"
+                      >
+                        Copy Link
+                      </button>
+                      <button
+                        onClick={() => {
+                          console.log("Add Member button clicked");
+                          alert("Opening add member modal...");
+                          setShowAddMember(true);
+                          setAddMemberSearch("");
+                        }}
+                        className="flex-1 bg-green-600 text-white py-1 px-2 rounded text-sm font-medium"
+                      >
+                        Add Member
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Members List in Details Panel */}
+                  {chatType === 'group' && (
+                    <div className="px-6 pb-4">
+                      <h4 className="text-sm font-semibold text-gray-300 mb-2">Members ({groupMembers?.length || 0})</h4>
+                      {groupMembers && groupMembers.length > 0 ? (
+                        <div className="space-y-2">
+                          {groupMembers.map(member => (
+                            <div key={member._id} className="flex items-center gap-2 p-2 bg-gray-700 rounded-lg">
+                              <div className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center flex-shrink-0">
+                                {member.avatar ? (
+                                  <img src={member.avatar} alt={member.name} className="w-full h-full object-cover rounded-full" />
+                                ) : (
+                                  <span className="text-white font-bold text-sm">
+                                    {(member.name || member.email)?.charAt(0).toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-white text-sm font-medium truncate">{member.name || member.email}</p>
+                                {member.email && <p className="text-gray-400 text-xs truncate">{member.email}</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-400 text-xs">No members</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Balance Details in Details Panel */}
+                  {chatType === 'group' && (
+                    <div className="px-6 pb-4">
+                      <h4 className="text-sm font-semibold text-gray-300 mb-2">Balance Details</h4>
+                      {groupMembers && groupMembers.length > 0 ? (
+                        <div className="space-y-1">
+                          {groupMembers.map(member => {
+                            const rawAmount = balances?.[member._id] ?? 0;
+                            const roundedAmount = Math.round(Math.abs(rawAmount));
+                            let color = "text-gray-400";
+                            let display = "settled";
+                            if (rawAmount > 0) {
+                              color = "text-red-500";
+                              display = `owes you ₹${roundedAmount}`;
+                            } else if (rawAmount < 0) {
+                              color = "text-green-500";
+                              display = `you owe ₹${roundedAmount}`;
+                            }
+                            return (
+                              <div key={member._id} className={`flex justify-between text-xs ${color}`}>
+                                <span>{member.name || member.email}</span>
+                                <span>{display}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-gray-400 text-xs">No members</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : null}
@@ -640,16 +783,6 @@ function Dashboard() {
                 </button>
                 {selectedChat.name}
               </div>
-              
-              {chatType === 'group' && (
-                <button
-                  onClick={fetchBalances}
-                  className="text-gray-400 hover:text-white text-lg"
-                  title="View Balance"
-                >
-                  (i)
-                </button>
-              )}
             </div>
             
 {/* Messages area - with spacer to push messages to bottom */}
@@ -679,18 +812,9 @@ function Dashboard() {
                   
                   const senderName =
                     msg.sender && typeof msg.sender === "object" ? msg.sender.name : "User";
-                  
-                  let currentUserId = null;
-                  try {
-                    const stored = localStorage.getItem("user");
-                    if (stored) {
-                      const parsed = JSON.parse(stored);
-                      currentUserId = parsed?.id || parsed?._id || null;
-                    }
-                  } catch (e) {
-                    console.error("Error parsing user:", e);
-                  }
-                  
+                   
+                  const currentUserId = getCurrentUserId();
+                   
                   const senderIdStr = senderId ? String(senderId) : "";
                   const currentUserIdStr = currentUserId ? String(currentUserId) : "";
                   const isMe = senderIdStr === currentUserIdStr && senderIdStr !== "" && currentUserIdStr !== "";
@@ -737,7 +861,7 @@ function Dashboard() {
                           )}
                           <div
                             className={`max-w-xs px-4 py-2 rounded-lg break-words ${
-                              isMe ? "bg-blue-600" : "bg-gray-700 self-start"
+                              isMe || msg.isExpense ? "bg-blue-600" : "bg-gray-700 self-start"
                             }`}
                             style={{ minWidth: "80px" }}
                           >
@@ -746,7 +870,30 @@ function Dashboard() {
                                 {senderName}
                               </div>
                             )}
-                            {msg.content}
+                            {msg.isExpense ? (
+                              <div className="text-white">
+                                <div className="font-semibold mb-1">{msg.content}</div>
+                                {msg.expenseData?.createdBy?._id === currentUserId && (
+                                  <button
+                                    onClick={async () => {
+                                      if (confirm("Delete this expense?")) {
+                                        try {
+                                          await api.delete(`/expenses/${msg.expenseData._id}`);
+                                          setMessages(prev => prev.filter(m => m.expenseData?._id !== msg.expenseData._id));
+                                        } catch (err) {
+                                          alert(err.response?.data?.message || "Failed to delete expense");
+                                        }
+                                      }
+                                    }}
+                                    className="text-red-300 text-xs underline mt-1"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              msg.content
+                            )}
                           </div>
                         </div>
                       </div>
@@ -815,12 +962,43 @@ function Dashboard() {
                   />
 
                   <div>
+                    <div className="mb-2 flex justify-between items-center">
+                      <label className="text-sm text-gray-300">Who Paid (enter amount each person paid):</label>
+                      <span className={`text-xs ${Object.values(payerAmounts).reduce((s, v) => s + (Number(v) || 0), 0) === Number(expenseData.amount) ? 'text-green-400' : 'text-red-400'}`}>
+                        Total: ₹{Object.values(payerAmounts).reduce((s, v) => s + (Number(v) || 0), 0)} / ₹{expenseData.amount || 0}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {groupMembers && groupMembers.map(member => {
+                        const memberId = member._id || member.id;
+                        
+                        return (
+                          <div key={memberId} className="flex items-center gap-2">
+                            <span className="text-white w-32 truncate">{member.name || member.email}</span>
+                            <input
+                              type="number"
+                              className="flex-1 p-2 rounded bg-gray-700 text-white text-sm border border-gray-600"
+                              placeholder="Amount paid"
+                              value={payerAmounts[memberId] || ""}
+                              onChange={(e) => {
+                                setPayerAmounts({
+                                  ...payerAmounts,
+                                  [memberId]: e.target.value
+                                });
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
                     <div className="mb-2">
                       <label className="text-sm text-gray-300">Split Between:</label>
                     </div>
 
                     <div className="space-y-2">
-                      {/* All checkbox */}
                       <div className="flex items-center gap-2 border-b border-gray-600 pb-2 mb-2">
                         <input
                           type="checkbox"
@@ -843,11 +1021,13 @@ function Dashboard() {
 
                       {groupMembers && groupMembers.map(member => {
                         const memberId = member._id || member.id;
+                        const isIncluded = expenseData.participants.includes(memberId);
+                        
                         return (
                           <div key={memberId} className="flex items-center gap-2">
                             <input
                               type="checkbox"
-                              checked={expenseData.participants.includes(memberId)}
+                              checked={isIncluded}
                               onChange={(e) => {
                                 const currentParticipants = expenseData.participants;
                                 let newParticipants;
@@ -874,7 +1054,7 @@ function Dashboard() {
                                 });
                               }}
                             />
-                            <span className="text-white">{member.name || member.email}</span>
+                            <span className="text-white flex-1">{member.name || member.email}</span>
                           </div>
                         );
                       })}
@@ -896,12 +1076,27 @@ function Dashboard() {
                           return;
                         }
                         
+                        const payers = Object.entries(payerAmounts)
+                          .filter(([_, amount]) => amount && Number(amount) > 0)
+                          .map(([userId, amount]) => ({ user: userId, amount: Number(amount) }));
+                        
+                        if (payers.length === 0) {
+                          alert("Please select at least one person who paid");
+                          return;
+                        }
+                        
+                        const totalPaid = payers.reduce((sum, p) => sum + p.amount, 0);
+                        if (totalPaid !== Number(expenseData.amount)) {
+                          alert(`Total paid (₹${totalPaid}) must equal expense amount (₹${expenseData.amount})`);
+                          return;
+                        }
+                        
                         try {
-                          await api.post(`/expenses/${selectedChat._id}/confirm`, {
+                          const res = await api.post(`/expenses/${selectedChat._id}/confirm`, {
                             description: expenseData.description,
                             amount: Number(expenseData.amount),
                             involvedUsers: expenseData.participants,
-                            splitType: "equal"
+                            payers
                           });
 
                           setShowExpenseModal(false);
@@ -912,10 +1107,28 @@ function Dashboard() {
                             includeSelf: true
                           });
                           setSelectAll(false);
+                          setPayerAmounts({});
+                          setSplitAmounts({});
                           
-                          // Refresh messages to see the expense
-                          const res = await api.get(`/chat/${selectedChat._id}/messages`);
-                          setMessages(res.data);
+                          const expense = res.data;
+                          const payersList = expense.payers?.map(p => `${p.user?.name || 'Someone'} (₹${p.amount})`).join(', ') || "Someone";
+                          const memberCount = expense.splits?.length || 0;
+                          
+                          const expenseMsg = {
+                            content: `💰 ${payersList} paid ₹${expense.amount} for "${expense.description}" (split among ${memberCount})`,
+                            sender: expense.createdBy?._id || expense.createdBy,
+                            createdAt: expense.createdAt,
+                            isExpense: true,
+                            expenseData: expense
+                          };
+                          setMessages(prev => [...prev, expenseMsg]);
+                          
+                          try {
+                            const balRes = await api.get(`/settlement/${selectedChat._id}/balances`);
+                            setBalances(balRes.data.balances);
+                          } catch (e) {
+                            console.error("Error refreshing balances:", e);
+                          }
                           
                           alert("Expense added successfully!");
                         } catch (err) {
@@ -1011,11 +1224,63 @@ function Dashboard() {
                 );
               })}
             </div>
-
-            </div>
+          </div>
         </div>
       )}
 
+      {/* Add Member Modal */}
+      {showAddMember && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ maxWidth: '350px', width: '90%', backgroundColor: '#1f2937', padding: '20px', borderRadius: '10px', border: '2px solid yellow' }}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">Add Member</h3>
+              <button onClick={() => setShowAddMember(false)} className="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <input
+              type="text"
+              placeholder="Search contacts..."
+              value={addMemberSearch}
+              onChange={(e) => setAddMemberSearch(e.target.value)}
+              className="w-full p-2 rounded bg-gray-700 text-white mb-3"
+              autoFocus
+            />
+            <div className="max-h-60 overflow-y-auto" style={{ border: '1px solid green', minHeight: '100px' }}>
+              <p style={{ color: 'white', fontSize: '12px' }}>Conversations: {conversations.length}</p>
+              {conversations.length === 0 ? (
+                <p className="text-gray-400 text-sm text-center py-4">No conversations yet!</p>
+              ) : conversations
+                .filter(conv => {
+                  const name = conv.participantId?.name?.toLowerCase() || "";
+                  return name.includes(addMemberSearch.toLowerCase());
+                })
+                .map(conv => (
+                  <div
+                    key={conv.participantId._id}
+                    className="flex items-center gap-3 p-2 rounded hover:bg-gray-700 cursor-pointer"
+                    onClick={() => {
+                      const memberEmail = conv.participantId.email;
+                      const groupId = selectedChat._id;
+                      console.log("Adding:", groupId, memberEmail);
+                      api.post(`/groups/${groupId}/add-member`, { email: memberEmail })
+                        .then(() => {
+                          alert("Member added!");
+                          setShowAddMember(false);
+                        })
+                        .catch(err => {
+                          alert(err.response?.data?.message || "Failed");
+                        });
+                    }}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                      <span className="text-white text-sm">{conv.participantId.name?.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <span className="text-white">{conv.participantId.name}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
