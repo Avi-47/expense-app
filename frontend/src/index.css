@@ -692,7 +692,7 @@ html, body, #root {
   min-height: auto;
   padding: 6rem 2rem 4rem;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .hero-container {
@@ -854,7 +854,7 @@ html, body, #root {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding-top: 1rem;
+  padding-top: 5rem;
 }
 
 .auth-card {
@@ -867,9 +867,7 @@ html, body, #root {
   max-width: 380px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   min-height: 380px;
-  overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  color: rgba(255, 255, 255, 0.3);
 }
 .auth-card.glass {
   background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(59, 130, 246, 0.1));
