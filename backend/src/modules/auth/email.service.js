@@ -1,6 +1,12 @@
 const nodemailer = require("nodemailer");
 const { EMAIL_USER, EMAIL_PASS, EMAIL_HOST, EMAIL_PORT } = require("../../config/env");
 
+console.log("📧 ====== EMAIL SERVICE INIT ======");
+console.log("📧 EMAIL_USER:", EMAIL_USER ? "set" : "NOT SET");
+console.log("📧 EMAIL_PASS:", EMAIL_PASS ? "set" : "NOT SET");
+console.log("📧 EMAIL_HOST:", EMAIL_HOST || "smtp.gmail.com (default)");
+console.log("📧 EMAIL_PORT:", EMAIL_PORT || "587 (default)");
+
 const transporter = nodemailer.createTransport({
   host: EMAIL_HOST || "smtp.gmail.com",
   port: EMAIL_PORT || 587,
@@ -16,7 +22,7 @@ const transporter = nodemailer.createTransport({
 
 transporter.verify((error, success) => {
   if (error) {
-    console.log("📧 SMTP verification error:", error.message);
+    console.log("📧 SMTP verification FAILED:", error.code, error.message);
   } else {
     console.log("📧 SMTP server is ready to take our messages");
   }
@@ -51,11 +57,15 @@ exports.sendEmail = async (to, otp) => {
     `
   };
 
+  console.log(`📧 Attempting to send email to ${to}...`);
+  console.log(`📧 Using SMTP: ${EMAIL_HOST}:${EMAIL_PORT}`);
+  
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Email sent to ${to}`);
+    console.log(`✅ Email sent successfully to ${to}`);
   } catch (err) {
-    console.error("❌ Email send error:", err.message);
+    console.error("❌ Email send FAILED:", err.code, err.message);
+    console.error("📧 Full error:", JSON.stringify(err));
     console.log(`\n========================================`);
     console.log(`📧 OTP FALLBACK (Email failed)`);
     console.log(`   To: ${to}`);
