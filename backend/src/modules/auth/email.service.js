@@ -80,8 +80,6 @@ exports.sendEmail = async (to, otp) => {
   }
 
   console.log(`\n========================================`);
-  console.log(`📧 OTP FALLBACK`);
-  console.log(`   To: ${to}`);
-  console.log(`   OTP: ${otp}`);
+  console.log(`📧 OTP sent to: ${to}`);
   console.log(`========================================\n`);
 };
