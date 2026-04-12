@@ -128,25 +128,32 @@ exports.completeRegister = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
+  console.log("🔐 LOGIN REQUEST RECEIVED");
+  console.log("🔐 Body:", req.body);
   try {
     const { email, password } = req.body;
+    console.log("🔐 Login attempt for:", email);
     const user = await User.findOne({ email });
     
     if (!user) {
+      console.log("🔐 User not found");
       return res.status(400).json({ message: "Invalid Credentials" });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
+    console.log("🔐 Password match:", isMatch);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid Credentials" });
     }
 
     const token = generateToken(user);
+    console.log("🔐 Login successful for:", email);
     res.json({
       user: { id: user._id, name: user.name, email: user.email },
       token
     });
   } catch (err) {
+    console.error("🔐 Login error:", err);
     res.status(500).json({ message: err.message });
   }
 };
