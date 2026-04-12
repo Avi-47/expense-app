@@ -29,8 +29,6 @@ exports.sendEmail = async (to, otp) => {
 
   if (RESEND_API_KEY) {
     console.log(`📧 Using RESEND API...`);
-
-  if (RESEND_API_KEY) {
     try {
       const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
