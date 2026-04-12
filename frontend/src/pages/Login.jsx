@@ -242,10 +242,17 @@ function Login() {
                     Continue
                   </button>
 
+                  <p className="auth-text" style={{ textAlign: 'center' }}>
+                    <button type="button" className="auth-link" onClick={() => setStep('forgot')}>
+                      Forgot Password?
+                    </button>
+                  </p>
                   <p className="auth-text">
                     No account? <button type="button" className="auth-link" onClick={() => setStep('register')}>Sign up</button>
                   </p>
                 </form>
+              ) : step === 'forgot' ? (
+                <ForgotPasswordForm onSwitchToLogin={() => setStep('login')} />
               ) : (
                 <RegisterForm onSwitchToLogin={() => setStep('login')} />
               )}
@@ -480,6 +487,112 @@ function RegisterForm({ onSwitchToLogin }) {
 
       <p className="auth-text">
         Already have an account? <button type="button" className="auth-link" onClick={onSwitchToLogin}>Login</button>
+      </p>
+    </div>
+  );
+}
+
+function ForgotPasswordForm({ onSwitchToLogin }) {
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [step, setStep] = useState("email");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const handleSendOtp = async () => {
+    if (!email) return;
+    setError("");
+    setLoading(true);
+    try {
+      await api.post("/auth/forgot-password", { email });
+      setMessage("OTP sent to your email!");
+      setStep("verify");
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to send OTP");
+    }
+    setLoading(false);
+  };
+
+  const handleReset = async () => {
+    if (!otp || !newPassword) return;
+    setError("");
+    setLoading(true);
+    try {
+      await api.post("/auth/reset-password", { email, otp, newPassword });
+      setMessage("Password reset successful!");
+      setTimeout(() => onSwitchToLogin(), 2000);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to reset password");
+    }
+    setLoading(false);
+  };
+
+  if (step === "verify") {
+    return (
+      <div className="auth-form">
+        <p style={{ marginBottom: '1rem', color: '#666' }}>Enter the OTP sent to your email and your new password.</p>
+        <div className="form-group">
+          <label className="form-label">OTP</label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Enter 6-digit OTP"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            maxLength={6}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">New Password</label>
+          <input
+            type="password"
+            className="form-input"
+            placeholder="Enter new password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+        </div>
+        {error && <p className="auth-error">{error}</p>}
+        {message && <p className="auth-text" style={{ color: 'green' }}>{message}</p>}
+        <button
+          onClick={handleReset}
+          disabled={otp.length !== 6 || !newPassword || loading}
+          className="auth-btn-primary"
+        >
+          {loading ? "Resetting..." : "Reset Password"}
+        </button>
+        <p className="auth-text">
+          Remember password? <button type="button" className="auth-link" onClick={onSwitchToLogin}>Login</button>
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="auth-form">
+      <div className="form-group">
+        <label className="form-label">Email</label>
+        <input
+          type="email"
+          className="form-input"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+      </div>
+      {error && <p className="auth-error">{error}</p>}
+      {message && <p className="auth-text" style={{ color: 'green' }}>{message}</p>}
+      <button
+        onClick={handleSendOtp}
+        disabled={!email || loading}
+        className="auth-btn-primary"
+      >
+        {loading ? "Sending..." : "Send OTP"}
+      </button>
+      <p className="auth-text">
+        Remember password? <button type="button" className="auth-link" onClick={onSwitchToLogin}>Login</button>
       </p>
     </div>
   );
