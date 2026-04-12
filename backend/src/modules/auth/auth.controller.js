@@ -158,6 +158,76 @@ exports.login = async (req, res) => {
   }
 };
 
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    console.log("🔑 FORGOT PASSWORD for:", email);
+    
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    const OTP = require("./otp.model");
+    await OTP.deleteMany({ contactValue: email, verified: false });
+    await OTP.create({
+      userId: user._id,
+      otpHash,
+      contactMethod: "email",
+      contactValue: email,
+      expiresAt
+    });
+
+    console.log("📧 Password reset OTP:", otp);
+    const { sendEmail } = require("./email.service");
+    await sendEmail(email, otp);
+
+    res.json({ message: "OTP sent to your email" });
+  } catch (err) {
+    console.error("🔑 Forgot password error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    
+    const OTP = require("./otp.model");
+    const otpRecord = await OTP.findOne({
+      contactValue: email,
+      verified: false
+    }).sort({ createdAt: -1 });
+
+    if (!otpRecord) {
+      return res.status(400).json({ message: "No OTP found" });
+    }
+
+    if (new Date() > otpRecord.expiresAt) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    const inputHash = crypto.createHash("sha256").update(otp).digest("hex");
+    if (inputHash !== otpRecord.otpHash) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    const user = await User.findOne({ email });
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    await OTP.deleteMany({ contactValue: email, verified: false });
+
+    res.json({ message: "Password reset successful" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 exports.searchUsers = async (req, res) => {
   try {
     const q = req.query.q;
