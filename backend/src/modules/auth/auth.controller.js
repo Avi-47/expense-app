@@ -14,6 +14,8 @@ const generateToken = (user) => {
 
 exports.sendOtp = async (req, res) => {
   try {
+    console.log("📨 SEND OTP REQUEST RECEIVED");
+    console.log("📨 Body:", req.body);
     const { email, phoneNumber } = req.body;
 
     if (!email && !phoneNumber) {
