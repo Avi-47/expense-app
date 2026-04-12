@@ -2,7 +2,8 @@ const nodemailer = require("nodemailer");
 const { EMAIL_USER, EMAIL_PASS, EMAIL_HOST, EMAIL_PORT, RESEND_API_KEY } = require("../../config/env");
 
 console.log("📧 ====== EMAIL SERVICE INIT ======");
-console.log("📧 RESEND_API_KEY:", RESEND_API_KEY ? "set" : "NOT SET");
+console.log("📧 RESEND_API_KEY starts with:", RESEND_API_KEY ? RESEND_API_KEY.substring(0, 5) : "NOT SET");
+console.log("📧 RESEND_API_KEY full:", RESEND_API_KEY ? "set" : "NOT SET");
 console.log("📧 EMAIL_USER:", EMAIL_USER ? "set" : "NOT SET");
 
 let transporter;
@@ -22,7 +23,12 @@ if (EMAIL_USER && EMAIL_PASS) {
 }
 
 exports.sendEmail = async (to, otp) => {
-  console.log(`📧 Attempting to send email to ${to}...`);
+  console.log(`📧 ====== SEND EMAIL START ======`);
+  console.log(`📧 To: ${to}, OTP: ${otp}`);
+  console.log(`📧 RESEND_API_KEY exists:`, !!RESEND_API_KEY);
+
+  if (RESEND_API_KEY) {
+    console.log(`📧 Using RESEND API...`);
 
   if (RESEND_API_KEY) {
     try {
@@ -60,6 +66,7 @@ exports.sendEmail = async (to, otp) => {
   }
 
   if (transporter) {
+    console.log(`📧 Using SMTP (Gmail)...`);
     try {
       await transporter.sendMail({
         from: `"Expense Splitter" <${EMAIL_USER}>`,
