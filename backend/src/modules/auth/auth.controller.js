@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const User = require("./user.model");
@@ -168,7 +169,7 @@ exports.forgotPassword = async (req, res) => {
       return res.status(400).json({ message: "User not found" });
     }
 
-    const otp = crypto.randomInt(100000, 999999).toString();
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
