@@ -21,14 +21,14 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(authRoutes);
-app.use(groupRoutes);
-app.use(chatRoutes);
-app.use(expenseRoutes);
-app.use(settlementRoutes);
-app.use(aiRoutes);
-app.use(paymentRoutes);
-app.use(userRoutes);
+app.use("/auth", authRoutes);
+app.use("/groups", groupRoutes);
+app.use("/chat", chatRoutes);
+app.use("/expenses", expenseRoutes);
+app.use("/settlement", settlementRoutes);
+app.use("/ai", aiRoutes);
+app.use("/payments", paymentRoutes);
+app.use("/users", userRoutes);
 
 app.get("/health", (req, res) => {
   res.status(200).json({ message: "API is healthy" });
