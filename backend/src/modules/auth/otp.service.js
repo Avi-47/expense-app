@@ -48,6 +48,7 @@ exports.generateOTP = async (userId, email, phoneNumber) => {
   console.log(`========================================\n`);
 
   if (contactMethod === "email") {
+    console.log("📧 Calling sendEmail for:", contactValue);
     await sendEmail(contactValue, otp);
   } else {
     console.log(`[SMS] OTP for ${contactValue}: ${otp}`);
