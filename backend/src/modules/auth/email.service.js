@@ -5,11 +5,11 @@ console.log("📧 ====== EMAIL SERVICE INIT ======");
 console.log("📧 EMAIL_USER:", EMAIL_USER ? "set" : "NOT SET");
 console.log("📧 EMAIL_PASS:", EMAIL_PASS ? "set" : "NOT SET");
 console.log("📧 EMAIL_HOST:", EMAIL_HOST || "smtp.gmail.com (default)");
-console.log("📧 EMAIL_PORT:", EMAIL_PORT || "587 (default)");
+console.log("📧 EMAIL_PORT:", parseInt(EMAIL_PORT) || 587, "(parsed)");
 
 const transporter = nodemailer.createTransport({
   host: EMAIL_HOST || "smtp.gmail.com",
-  port: EMAIL_PORT || 587,
+  port: parseInt(EMAIL_PORT) || 587,
   secure: false,
   auth: {
     user: EMAIL_USER,
