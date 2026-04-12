@@ -21,24 +21,24 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use("/api/auth", authRoutes);
-app.use("/api/groups", groupRoutes);
-app.use("/api/chat", chatRoutes);
-app.use("/api/expenses", expenseRoutes);
-app.use("/api/settlement", settlementRoutes);
-app.use("/api/ai", aiRoutes);
-app.use("/api/payments", paymentRoutes);
-app.use("/api/users", userRoutes);
+app.use(authRoutes);
+app.use(groupRoutes);
+app.use(chatRoutes);
+app.use(expenseRoutes);
+app.use(settlementRoutes);
+app.use(aiRoutes);
+app.use(paymentRoutes);
+app.use(userRoutes);
+
+app.get("/health", (req, res) => {
+  res.status(200).json({ message: "API is healthy" });
+});
 
 app.use(express.static(path.join(__dirname, "../frontend-dist")));
 
 app.use((req, res) => {
   console.log(`📍 Unmatched: ${req.method} ${req.url}`);
   res.sendFile(path.join(__dirname, "../frontend-dist/index.html"));
-});
-
-app.get("/health", (req, res) => {
-  res.status(200).json({ message: "API is healthy" });
 });
 
 module.exports = app;
