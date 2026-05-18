@@ -19,6 +19,9 @@ dist/
 dist-ssr/
 frontend-dist/
 
+# Project-specific build output inside backend
+backend/frontend-dist/
+
 # IDE
 .vscode/
 .idea/
@@ -26,3 +29,40 @@ frontend-dist/
 # Backend specific
 backend/node_modules/
 frontend/node_modules/
+
+# Environment files for subprojects
+backend/.env
+frontend/.env
+
+# Test coverage
+coverage/
+
+# Temporary files
+.cache/
+.parcel-cache/
+
+# Vite / frontend build cache
+.vite/
+
+# Next/Nuxt build outputs
+.next/
+/.nuxt/
+
+# Logs and debug
+logs/
+*.log
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets and keys
+*.pem
+*.key
+secrets.env
+
+# Database files
+*.sqlite3
+*.db
+dump.rdb
