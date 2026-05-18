@@ -14,10 +14,16 @@ const { callLLMStream } = require("../modules/ai/llm.service");
 const { getGroupState, setGroupState, clearPendingExpense } = require("../modules/conversation/groupState.service");
 
 const Expense = require("../modules/expense/expense.model");
-const { updateBalances } = require("../modules/expense/balance.service");
+const engine = require("../modules/expense/balance-engine.service");
+const Balance = require("../modules/expense/balance.model");
 
 let io;
 let AI_USER_ID = null;
+
+const emitBalancesUpdated = (groupId) => {
+  if (!io) return;
+  io.to(String(groupId)).emit("balances_updated", { groupId: String(groupId) });
+};
 
 // ===============================
 // Ensure AI User Exists
@@ -192,36 +198,59 @@ const initSocket = (server) => {
               m._id.toString()
             );
 
+            const amount = Number(state.pendingExpense.amount) || 0;
+            const pendingPayers = Array.isArray(state.pendingExpense.payers) && state.pendingExpense.payers.length > 0
+              ? state.pendingExpense.payers
+              : [{ user: state.pendingExpense.payer, amount }];
+
+            const paidMap = {};
+            for (const p of pendingPayers) {
+              const uid = String(p.user);
+              paidMap[uid] = (paidMap[uid] || 0) + (Number(p.amount) || 0);
+            }
+
             const baseShare = Math.floor(amount / participants.length);
             const remainder = amount % participants.length;
 
             const splits = participants.map((userId, index) => {
-              const isPayer = userId.toString() === payerId.toString();
-
               const userShare = baseShare + (index === 0 ? remainder : 0);
+              const paid = paidMap[userId] || 0;
 
               return {
                 user: userId,
                 amount: userShare,
-                paidAmount: isPayer ? userShare : 0,
-                status: isPayer ? "PAID" : "PENDING"
+                paidAmount: paid,
+                status: paid === 0 ? "PENDING" : paid < userShare ? "PARTIAL" : "PAID"
               };
             });
 
 
             const expense = await Expense.create({
               groupId,
-              paidBy: state.pendingExpense.payer,
+              createdBy: socket.user.id,
+              payers: pendingPayers,
               amount: state.pendingExpense.amount,
               description: "Auto detected expense",
               splits
             });
+            // Incremental ledger update for this expense
+            const netByUser = new Map();
+            for (const s of splits) {
+              const userId = String(s.user);
+              const shareCents = Math.round(Number(s.amount) * 100);
+              const paidCents = Math.round(Number(s.paidAmount || 0) * 100);
+              netByUser.set(userId, (netByUser.get(userId) || 0) + (paidCents - shareCents));
+            }
 
-            await updateBalances(
-              groupId,
-              state.pendingExpense.payer,
-              splits
-            );
+            const intermediate = await engine.buildIntermediateMatrix(netByUser);
+            await engine.mergeIntermediateIntoLedger(groupId, intermediate);
+            try {
+              console.log("[LEDGER AFTER SOCKET CREATE]", await Balance.find({ groupId }));
+            } catch (e) {
+              console.error("Ledger debug failed:", e.message);
+            }
+
+            emitBalancesUpdated(groupId);
 
             await clearPendingExpense(groupId);
 

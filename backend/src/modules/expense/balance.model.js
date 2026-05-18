@@ -1,27 +1,20 @@
 const mongoose = require("mongoose");
 
-const balanceSchema = new mongoose.Schema({
-  groupId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Group",
-    required: true
+const balanceSchema = new mongoose.Schema(
+  {
+    groupId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Group",
+      required: true,
+      unique: true,
+      index: true
+    },
+    matrix: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    }
   },
-  fromUser: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true
-  },
-  toUser: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true
-  },
-  amount: {
-    type: Number,
-    default: 0
-  }
-}, { timestamps: true });
+  { timestamps: true }
+);
 
-balanceSchema.index({ groupId: 1, fromUser: 1, toUser: 1 }, { unique: true });
-
-module.exports = mongoose.model("Balance", balanceSchema);
+module.exports = mongoose.model("GroupBalance", balanceSchema);

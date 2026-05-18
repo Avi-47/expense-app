@@ -1,10 +1,10 @@
-const { getUserBalances, simplifyDebts } = require("../expense/balance.service");
+const { getUserBalances, simplifyDebts, getGroupMatrix } = require("../expense/balance.service");
 const { callLLM } = require("./llm.service");
 const Expense = require("../expense/expense.model");
 
 exports.generateGroupSummary = async (groupId, userId) => {
   const balances = await getUserBalances(groupId, userId);
-  const simplified = await simplifyDebts(groupId);
+  const matrix = await getGroupMatrix(groupId);
 
   const expenses = await Expense.find({ groupId })
     .sort({ createdAt: -1 })
@@ -12,14 +12,14 @@ exports.generateGroupSummary = async (groupId, userId) => {
 
   return {
     balances,
-    simplified,
+    matrix,
     recentExpenses: expenses
   };
 };
 
 exports.explainGroup = async (groupId, userId, userQuery) => {
   const balances = await getUserBalances(groupId, userId);
-  const simplified = await simplifyDebts(groupId);
+  const matrix = await getGroupMatrix(groupId);
 
   const prompt = `
 This is a group expense app.
@@ -29,11 +29,11 @@ Users share expenses and balances exist ONLY between group members.
 User Question:
 "${userQuery}"
 
-Current Member Balances (who owes whom):
+Current Member Balance Row:
 ${JSON.stringify(balances, null, 2)}
 
-Optimized Settlements:
-${JSON.stringify(simplified, null, 2)}
+Full Group Balance Matrix:
+${JSON.stringify(matrix, null, 2)}
 
 Explain clearly who owes whom.
 If everything is zero, say no expenses recorded.

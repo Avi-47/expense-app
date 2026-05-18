@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useContext, useCallback } from "react";
 import api from "../services/api";
 import { connectSocket } from "../services/socket";
 import { AuthContext } from "../context/AuthContext";
+import { formatMoney } from "../utils/money";
 
 const formatMessageDate = (timestamp) => {
   if (!timestamp) return null;
@@ -156,10 +157,46 @@ function Group() {
   };
 
   const fetchBalances = async () => {
-    const res = await api.get(`/settlement/${groupId}/balances`);
+    const res = await api.get(`/settlement/${groupId}/balances`, {
+      params: { t: Date.now() },
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache"
+      }
+    });
     console.log("BALANCES RESPONSE:", JSON.stringify(res.data, null, 2));
-    setBalances(res.data.balances);
+    setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
   };
+
+  const resolveMemberName = useCallback((userId) => {
+    const member = members.find((item) => String(item._id) === String(userId));
+    return member?.name || member?.email || String(userId);
+  }, [members]);
+
+  const getMemberBalanceSummary = useCallback((memberId) => {
+    const currentUserId = String(currentUser?._id || currentUser?.id || user?._id || user?.id || "");
+    const currentRow = balances?.[currentUserId] || {};
+    const netAmount = Number(currentRow[String(memberId)] || 0);
+
+    if (netAmount > 0) {
+      return {
+        state: "incoming",
+        label: `owes you ₹${formatMoney(netAmount)}`
+      };
+    }
+
+    if (netAmount < 0) {
+      return {
+        state: "outgoing",
+        label: `You owe ₹${formatMoney(Math.abs(netAmount))}`
+      };
+    }
+
+    return {
+      state: "settled",
+      label: "settled"
+    };
+  }, [balances, resolveMemberName]);
 
   const handleInviteUser = async () => {
     try {
@@ -182,14 +219,51 @@ function Group() {
   useEffect(() => {
     if (!socket) return;
 
+    console.log("[SOCKET] emitting join_group for groupId:", groupId);
     socket.emit("join_group", groupId);
 
     socket.on("message_received", (msg) => {
+      console.log("[SOCKET] message_received:", msg);
       setMessages((prev) => [...prev, msg]);
     });
 
     socket.on("expense_proposal", (data) => {
+      console.log("[SOCKET] expense_proposal:", data);
       setProposal(data);
+    });
+
+    socket.on("expense_added", (expense) => {
+      console.log("[SOCKET] expense_added event received:", expense);
+      if (expense?.groupId && String(expense.groupId) === String(groupId)) {
+        console.log("[SOCKET] → calling fetchBalances due to expense_added");
+        fetchBalances();
+      } else {
+        console.log("[SOCKET] → expense_added but wrong groupId, ignoring");
+      }
+    });
+
+    socket.on("expense_updated", (expense) => {
+      console.log("[SOCKET] expense_updated event received:", expense);
+      if (expense?.groupId && String(expense.groupId) === String(groupId)) {
+        console.log("[SOCKET] → calling fetchBalances due to expense_updated");
+        fetchBalances();
+      }
+    });
+
+    socket.on("expense_deleted", ({ groupId: deletedGroupId }) => {
+      console.log("[SOCKET] expense_deleted event received for groupId:", deletedGroupId);
+      if (String(deletedGroupId || groupId) === String(groupId)) {
+        console.log("[SOCKET] → calling fetchBalances due to expense_deleted");
+        fetchBalances();
+      }
+    });
+
+    socket.on("balances_updated", ({ groupId: updatedGroupId }) => {
+      console.log("[SOCKET] balances_updated event received for groupId:", updatedGroupId);
+      if (String(updatedGroupId || groupId) === String(groupId)) {
+        console.log("[SOCKET] → calling fetchBalances due to balances_updated");
+        fetchBalances();
+      }
     });
 
     socket.on("ai_stream_chunk", (token) => {
@@ -205,9 +279,14 @@ function Group() {
     });
 
     return () => {
+      console.log("[SOCKET] cleaning up listeners for groupId:", groupId);
       socket.emit("leave_group", groupId);
       socket.off("message_received");
       socket.off("expense_proposal");
+      socket.off("expense_added");
+      socket.off("expense_updated");
+      socket.off("expense_deleted");
+      socket.off("balances_updated");
       socket.off("ai_stream_chunk");
       socket.off("ai_stream_end");
     };
@@ -232,12 +311,36 @@ function Group() {
 
   const handleCreateExpense = async () => {
     try {
-      await api.post(`/expenses/${groupId}/confirm`, {
+      console.log("[EXPENSE] Creating expense with data:", expenseData);
+      
+      if (!expenseData.description || !expenseData.amount || expenseData.participants.length === 0) {
+        alert("Please fill in all fields and select at least one participant");
+        return;
+      }
+
+      // Get current user as the payer for now
+      const payerId = user?.id;
+      if (!payerId) {
+        alert("Unable to determine current user");
+        return;
+      }
+
+      // If expense modal was meant to collect payers info, use this:
+      // For now, assume current user paid the full amount
+      const payers = [{
+        user: payerId,
+        amount: Number(expenseData.amount)
+      }];
+
+      const response = await api.post(`/expenses/${groupId}/confirm`, {
         description: expenseData.description,
         amount: Number(expenseData.amount),
         involvedUsers: expenseData.participants,
+        payers: payers,  // NOW SENDING PAYERS!
         splitType: "equal"
       });
+      
+      console.log("[EXPENSE] Expense created successfully:", response.data);
       setShowExpenseModal(false);
       setExpenseData({
         description: "",
@@ -247,7 +350,9 @@ function Group() {
       });
       fetchBalances();
     } catch (err) {
-      console.error(err);
+      console.error("[EXPENSE] Error creating expense:", err);
+      const errorMsg = err.response?.data?.message || err.message || "Unknown error";
+      alert("Error creating expense: " + errorMsg);
     }
   };
 
@@ -291,6 +396,19 @@ function Group() {
     };
     const rzp = new window.Razorpay(options);
     rzp.open();
+  };
+
+  const handleRecalculateBalances = async () => {
+    try {
+      console.log("[RECALC] User clicked Recalculate Balances button");
+      const res = await api.post(`/settlement/${groupId}/rebuild`);
+      console.log("[RECALC] Rebuild response:", res.data);
+      setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
+      alert("Balances recalculated successfully!");
+    } catch (err) {
+      console.error("[RECALC] Error recalculating balances:", err);
+      alert("Error recalculating balances: " + (err.response?.data?.message || err.message));
+    }
   };
 
   const addMember = async () => {
@@ -491,35 +609,34 @@ function Group() {
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-gray-400 mb-2">Members</h3>
-            {members.map((member) => {
-            const rawAmount = balances?.[member._id] ?? 0;
-            const isNegative = rawAmount < 0;
-            const isPositive = rawAmount > 0;
-            let color = "text-blue-400";
-            let clickable = false;
-            if (isNegative) {
-              color = "text-red-500";
-              clickable = true;
-            } else if (isPositive) {
-              color = "text-green-500";
-            }
-            return (
-              <div
-                key={member._id}
-                className={`flex justify-between p-2 rounded hover:bg-gray-700 ${color} ${
-                  clickable ? "cursor-pointer" : ""
-                }`}
-                onClick={() =>
-                  clickable && handlePay(member._id, Math.abs(rawAmount))
-                }
-              >
-                <span>{member.name}</span>
-                <span>₹{Math.abs(rawAmount)}</span>
-              </div>
-            );
-          })}
+            <h3 className="text-sm font-semibold text-gray-400 mb-2">Balance Details</h3>
+            {Array.isArray(members) && members.length > 0 ? members.map((member, index) => {
+              const memberId = member._id || member.id;
+              const summary = getMemberBalanceSummary(memberId);
+              const memberName = member.name || member.email || String(memberId);
+
+              return (
+                <div
+                  key={`${memberId}-${index}`}
+                  className={`flex justify-between p-2 rounded hover:bg-gray-700 ${
+                    summary.state === "outgoing" ? "text-red-500" : summary.state === "incoming" ? "text-green-500" : "text-gray-400"
+                  }`}
+                >
+                  <span>{memberName}</span>
+                  <span>{summary.label}</span>
+                </div>
+              );
+            }) : (
+              <div className="text-gray-400 text-sm">Settled</div>
+            )}
           </div>
+
+          <button
+            className="bg-yellow-600 px-4 py-2 rounded text-white mt-4 w-full"
+            onClick={handleRecalculateBalances}
+          >
+            🔄 Recalculate Balances
+          </button>
 
           <button
             className="bg-red-600 px-4 py-2 rounded text-white mt-6 w-full"
@@ -535,7 +652,7 @@ function Group() {
           <div className="modal-content">
             <h3 className="text-lg font-bold">Confirm Expense</h3>
             <p>Description: {proposal.description}</p>
-            <p>Amount: ₹{proposal.amount}</p>
+            <p>Amount: ₹{formatMoney(proposal.amount)}</p>
             <div className="flex justify-between gap-2">
               <button
                 className="bg-green-600 px-4 py-2 rounded"

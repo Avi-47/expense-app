@@ -1,6 +1,7 @@
 const Expense = require("./expense.model");
 const Group = require("../group/group.model");
-const { updateBalances } = require("./balance.service");
+const engine = require("./balance-engine.service");
+const Balance = require("./balance.model");
 const { getIO } = require("../../socket/socket");
 
 exports.confirmExpense = async (req, res) => {
@@ -37,6 +38,8 @@ exports.confirmExpense = async (req, res) => {
     }
 
     // 4️⃣ Create expense
+    await engine.ensureGroupBalanceDoc(groupId);
+
     const expense = await Expense.create({
       groupId,
       paidBy: req.user.id,
@@ -45,8 +48,24 @@ exports.confirmExpense = async (req, res) => {
       splits
     });
 
-    // 5️⃣ Update balances (CRITICAL)
-    await updateBalances(groupId, req.user.id, splits);
+    // 5️⃣ Incremental ledger update for this expense
+    const memberIds = group.members.map((member) => member._id.toString());
+    const amountCents = Math.round(Number(amount) * 100);
+    const netByUser = new Map();
+    for (const s of splits) {
+      const userId = String(s.user);
+      const shareCents = Math.round(Number(s.amount) * 100);
+      const paidCents = userId === String(req.user.id) ? amountCents : 0;
+      netByUser.set(userId, (netByUser.get(userId) || 0) + (paidCents - shareCents));
+    }
+
+    const intermediate = await engine.buildIntermediateMatrix(netByUser, memberIds);
+    await engine.mergeIntermediateIntoLedger(groupId, intermediate);
+    try {
+      console.log("[LEDGER AFTER CREATE]", await Balance.find({ groupId }));
+    } catch (e) {
+      console.error("Ledger debug failed:", e.message);
+    }
 
     // 6️⃣ Emit socket event
     const io = getIO();

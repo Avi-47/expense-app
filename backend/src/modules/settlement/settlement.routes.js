@@ -4,7 +4,8 @@ const authMiddleware = require("../../middlewares/auth.middleware");
 const {
   settlePayment,
   getBalances,
-  simplifyDebts
+  simplifyDebts,
+  rebuildBalances
 } = require("./settlement.controller");
 
 router.post("/:groupId", authMiddleware, settlePayment);
@@ -12,5 +13,7 @@ router.post("/:groupId", authMiddleware, settlePayment);
 router.get("/:groupId/balances", authMiddleware, getBalances);
 
 router.get("/:groupId/simplify", authMiddleware, simplifyDebts);
+
+router.post("/:groupId/rebuild", authMiddleware, rebuildBalances);
 
 module.exports = router;

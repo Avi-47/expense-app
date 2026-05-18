@@ -1,5 +1,4 @@
 const Expense = require("./expense.model");
-const { updateBalances } = require("./balance.service");
 
 exports.createExpenseFromAI = async (
   groupId,

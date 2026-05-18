@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { connectSocket } from "../services/socket";
 import { AuthContext } from "../context/AuthContext";
 import { useContext } from "react";
+import { formatMoney } from "../utils/money";
 
 function Dashboard() {
   const { user, token } = useContext(AuthContext);
@@ -61,6 +62,53 @@ function Dashboard() {
   const [showPhotoMenu, setShowPhotoMenu] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
   const [addMemberSearch, setAddMemberSearch] = useState("");
+  const [isSavingExpense, setIsSavingExpense] = useState(false);
+
+  const refreshGroupBalances = async (groupId) => {
+    if (!groupId) return;
+    try {
+      const res = await api.get(`/settlement/${groupId}/balances`, {
+        params: { t: Date.now() },
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache"
+        }
+      });
+      setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
+    } catch (err) {
+      console.error("Error refreshing balances:", err);
+    }
+  };
+
+  const resolveGroupMemberName = (userId) => {
+    const member = groupMembers.find((item) => String(item._id) === String(userId));
+    return member?.name || member?.email || String(userId);
+  };
+
+  const getMemberBalanceSummary = (memberId) => {
+    const currentUserId = getCurrentUserId();
+    const currentRow = balances?.[currentUserId] || {};
+    const netAmount = Number(currentRow[String(memberId)] || 0);
+
+    if (netAmount > 0) {
+      return {
+        state: "incoming",
+        label: `owes you ₹${formatMoney(netAmount)}`
+      };
+    }
+
+    if (netAmount < 0) {
+      return {
+        state: "outgoing",
+        label: `You owe ₹${formatMoney(Math.abs(netAmount))}`
+      };
+    }
+
+    return {
+      state: "settled",
+      label: "settled"
+    };
+  };
 
   // Close slide panel when switching chats
   useEffect(() => {
@@ -222,7 +270,10 @@ function Dashboard() {
     });
 
     socket.on("expense_added", (expense) => {
-      if (chatType === 'group' && selectedChat?._id === expense.groupId) {
+      const activeGroupId = selectedChat?._id ? String(selectedChat._id) : "";
+      const eventGroupId = expense?.groupId ? String(expense.groupId) : "";
+
+      if (chatType === 'group' && activeGroupId && activeGroupId === eventGroupId) {
         const payersList = expense.payers?.map(p => `${p.user?.name || 'Someone'} (₹${p.amount})`).join(', ') || "Someone";
         const memberCount = expense.splits?.length || 0;
         const amount = expense.amount;
@@ -234,19 +285,50 @@ function Dashboard() {
           isExpense: true,
           expenseData: expense
         };
-        
-        setMessages(prev => [...prev, expenseMsg]);
+
+        setMessages(prev => {
+          const alreadyExists = prev.some((m) => m?.expenseData?._id === expense?._id);
+          if (alreadyExists) return prev;
+          return [...prev, expenseMsg];
+        });
+        refreshGroupBalances(activeGroupId);
       }
     });
 
-    socket.on("expense_deleted", ({ expenseId }) => {
-      setMessages(prev => prev.filter(m => !m.isExpense || m.expenseData?._id !== expenseId));
+    socket.on("expense_updated", (expense) => {
+      const activeGroupId = selectedChat?._id ? String(selectedChat._id) : "";
+      const eventGroupId = expense?.groupId ? String(expense.groupId) : "";
+
+      if (chatType === 'group' && activeGroupId && activeGroupId === eventGroupId) {
+        refreshGroupBalances(activeGroupId);
+      }
+    });
+
+    socket.on("expense_deleted", ({ expenseId, groupId }) => {
+      const activeGroupId = selectedChat?._id ? String(selectedChat._id) : "";
+      const deletedGroupId = groupId ? String(groupId) : "";
+
+      if (chatType === 'group' && activeGroupId && activeGroupId === deletedGroupId) {
+        setMessages(prev => prev.filter(m => !m.isExpense || m.expenseData?._id !== expenseId));
+        refreshGroupBalances(activeGroupId);
+      }
+    });
+
+    socket.on("balances_updated", ({ groupId }) => {
+      const activeGroupId = selectedChat?._id ? String(selectedChat._id) : "";
+      const updatedGroupId = groupId ? String(groupId) : "";
+
+      if (chatType === 'group' && activeGroupId && activeGroupId === updatedGroupId) {
+        refreshGroupBalances(activeGroupId);
+      }
     });
 
     return () => {
       socket.off("message_received");
       socket.off("expense_added");
+      socket.off("expense_updated");
       socket.off("expense_deleted");
+      socket.off("balances_updated");
     };
   }, [selectedChat, chatType, socket]);
 
@@ -271,12 +353,7 @@ function Dashboard() {
         setGroupMembers(groupRes.data.members || []);
         
         // Fetch balances for this group
-        try {
-          const balRes = await api.get(`/settlement/${chat._id}/balances`);
-          setBalances(balRes.data.balances);
-        } catch (e) {
-          console.error("Error fetching balances:", e);
-        }
+        await refreshGroupBalances(chat._id);
         
         // Join the socket room for this group
         if (socket) {
@@ -357,13 +434,29 @@ function Dashboard() {
   const fetchBalances = async () => {
     if (!selectedChat || chatType !== 'group') return;
     try {
-      const res = await api.get(`/settlement/${selectedChat._id}/balances`);
-      setBalances(res.data.balances);
+      const res = await api.get(`/settlement/${selectedChat._id}/balances`, {
+        params: { t: Date.now() },
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache"
+        }
+      });
+      setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
       setShowBalanceModal(true);
     } catch (err) {
       console.error("Error fetching balances:", err);
     }
 };
+
+  useEffect(() => {
+    if (!selectedChat || chatType !== 'group') return;
+
+    const intervalId = setInterval(() => {
+      refreshGroupBalances(selectedChat._id);
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [selectedChat, chatType]);
 
   const fetchSidebar = async () => {
     try {
@@ -730,30 +823,26 @@ function Dashboard() {
                   {chatType === 'group' && (
                     <div className="px-6 pb-4">
                       <h4 className="text-sm font-semibold text-gray-300 mb-2">Balance Details</h4>
-                      {groupMembers && groupMembers.length > 0 ? (
+                      {Array.isArray(groupMembers) && groupMembers.length > 0 ? (
                         <div className="space-y-1">
-                          {groupMembers.map(member => {
-                            const rawAmount = balances?.[member._id] ?? 0;
-                            const roundedAmount = Math.round(Math.abs(rawAmount));
-                            let color = "text-gray-400";
-                            let display = "settled";
-                            if (rawAmount > 0) {
-                              color = "text-red-500";
-                              display = `owes you ₹${roundedAmount}`;
-                            } else if (rawAmount < 0) {
-                              color = "text-green-500";
-                              display = `you owe ₹${roundedAmount}`;
-                            }
+                          {groupMembers.map((member, index) => {
+                            const memberId = member._id || member.id;
+                            const summary = getMemberBalanceSummary(memberId);
+                            const memberName = member.name || member.email || String(memberId);
+
                             return (
-                              <div key={member._id} className={`flex justify-between text-xs ${color}`}>
-                                <span>{member.name || member.email}</span>
-                                <span>{display}</span>
+                              <div
+                                key={`${memberId}-${index}`}
+                                className={`flex justify-between text-xs ${summary.state === "incoming" ? "text-green-500" : summary.state === "outgoing" ? "text-red-500" : "text-gray-400"}`}
+                              >
+                                <span>{memberName}</span>
+                                <span>{summary.label}</span>
                               </div>
                             );
                           })}
                         </div>
                       ) : (
-                        <p className="text-gray-400 text-xs">No members</p>
+                        <p className="text-gray-400 text-xs">Settled</p>
                       )}
                     </div>
                   )}
@@ -875,6 +964,7 @@ function Dashboard() {
                                         try {
                                           await api.delete(`/expenses/${msg.expenseData._id}`);
                                           setMessages(prev => prev.filter(m => m.expenseData?._id !== msg.expenseData._id));
+                                          await refreshGroupBalances(selectedChat?._id);
                                         } catch (err) {
                                           alert(err.response?.data?.message || "Failed to delete expense");
                                         }
@@ -1066,6 +1156,8 @@ function Dashboard() {
 
                     <button
                       onClick={async () => {
+                        if (isSavingExpense) return;
+
                         if (!expenseData.description || !expenseData.amount || expenseData.participants.length === 0) {
                           alert("Please fill all fields and select at least one participant");
                           return;
@@ -1085,7 +1177,9 @@ function Dashboard() {
                           alert(`Total paid (₹${totalPaid}) must equal expense amount (₹${expenseData.amount})`);
                           return;
                         }
-                        
+
+                        setIsSavingExpense(true);
+
                         try {
                           const res = await api.post(`/expenses/${selectedChat._id}/confirm`, {
                             description: expenseData.description,
@@ -1104,36 +1198,29 @@ function Dashboard() {
                           setSelectAll(false);
                           setPayerAmounts({});
                           setSplitAmounts({});
-                          
-                          const expense = res.data;
-                          const payersList = expense.payers?.map(p => `${p.user?.name || 'Someone'} (₹${p.amount})`).join(', ') || "Someone";
-                          const memberCount = expense.splits?.length || 0;
-                          
-                          const expenseMsg = {
-                            content: `💰 ${payersList} paid ₹${expense.amount} for "${expense.description}" (split among ${memberCount})`,
-                            sender: expense.createdBy?._id || expense.createdBy,
-                            createdAt: expense.createdAt,
-                            isExpense: true,
-                            expenseData: expense
-                          };
-                          setMessages(prev => [...prev, expenseMsg]);
-                          
+
                           try {
-                            const balRes = await api.get(`/settlement/${selectedChat._id}/balances`);
-                            setBalances(balRes.data.balances);
+                            const rebuildRes = await api.post(`/settlement/${selectedChat._id}/rebuild`, null, {
+                              params: { t: Date.now() }
+                            });
+                            setBalances(rebuildRes?.data?.balances && typeof rebuildRes.data.balances === "object" ? rebuildRes.data.balances : {});
                           } catch (e) {
                             console.error("Error refreshing balances:", e);
+                            await refreshGroupBalances(selectedChat?._id);
                           }
                           
                           alert("Expense added successfully!");
                         } catch (err) {
                           console.error("Error adding expense:", err);
                           alert(err.response?.data?.message || "Failed to add expense");
+                        } finally {
+                          setIsSavingExpense(false);
                         }
                       }}
-                      className="bg-green-600 px-4 py-2 rounded text-white"
+                      disabled={isSavingExpense}
+                      className={`px-4 py-2 rounded text-white ${isSavingExpense ? "bg-gray-500 cursor-not-allowed" : "bg-green-600"}`}
                     >
-                      Save
+                      {isSavingExpense ? "Saving..." : "Save"}
                     </button>
                   </div>
 
@@ -1196,28 +1283,27 @@ function Dashboard() {
 
             <div className="mb-4">
               <h4 className="text-sm font-semibold text-gray-300 mb-2">Individual Balances:</h4>
-              {groupMembers && groupMembers.map(member => {
-                const rawAmount = balances?.[member._id] ?? 0;
-                const roundedAmount = Math.round(Math.abs(rawAmount));
-                let color = "text-blue-400";
-                let display = "";
-                if (rawAmount > 0) {
-                  color = "text-red-500"; // they owe me
-                  display = `owes me ₹${roundedAmount}`;
-                } else if (rawAmount < 0) {
-                  color = "text-green-500"; // I owe them
-                  display = `I owe ₹${roundedAmount}`;
-                } else {
-                  display = "settled";
-                }
-                
-                return (
-                  <div key={member._id} className={`flex justify-between p-2 rounded ${color}`}>
-                    <span>{member.name || member.email}</span>
-                    <span className="font-semibold">{display}</span>
-                  </div>
-                );
-              })}
+              {Array.isArray(groupMembers) && groupMembers.length > 0 ? (
+                <div className="space-y-1">
+                  {groupMembers.map((member, index) => {
+                    const memberId = member._id || member.id;
+                    const summary = getMemberBalanceSummary(memberId);
+                    const memberName = member.name || member.email || String(memberId);
+
+                    return (
+                      <div
+                        key={`${memberId}-${index}`}
+                        className={`flex justify-between p-2 rounded ${summary.state === "incoming" ? "text-green-500" : summary.state === "outgoing" ? "text-red-500" : "text-gray-400"}`}
+                      >
+                        <span>{memberName}</span>
+                        <span className="font-semibold">{summary.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-gray-400 text-xs">Settled</p>
+              )}
             </div>
           </div>
         </div>

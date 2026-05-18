@@ -8,10 +8,13 @@ async function extractIntent(content, senderId) {
   const match = content.match(expenseRegex);
 
   if (match) {
+    const parsedAmount = parseInt(match[1], 10);
     return {
       type: INTENT_TYPES.ADD_EXPENSE,
-      payer: senderId,
-      amount: parseInt(match[1]),
+      payers: [
+        { user: senderId, amount: parsedAmount }
+      ],
+      amount: parsedAmount,
       participants: null,
       status: "INCOMPLETE"
     };

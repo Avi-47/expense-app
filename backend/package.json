@@ -4,8 +4,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "predev": "node scripts/free-port.js",
+    "dev": "nodemon --exec \"node scripts/free-port.js && node src/server.js\"",
+    "start": "node scripts/free-port.js && node src/server.js"
   },
   "keywords": [],
   "author": "",
