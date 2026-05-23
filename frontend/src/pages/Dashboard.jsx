@@ -150,13 +150,77 @@ function Dashboard() {
     return "";
   };
 
-  const getMemberBalanceSummary = (memberId) => {
-    const currentUserMatrixKey = resolveCurrentUserMatrixKey();
-    const currentRow = (currentUserBalances && Object.keys(currentUserBalances).length > 0)
-      ? currentUserBalances
-      : ((currentUserMatrixKey && effectiveBalanceMatrix?.[currentUserMatrixKey]) || {});
+  const getStoredUser = () => {
+    try {
+      const stored = localStorage.getItem("user");
+      if (!stored || stored === "undefined" || stored === "null") {
+        return null;
+      }
+      return JSON.parse(stored);
+    } catch {
+      return null;
+    }
+  };
 
-    const matrixCents = Number(currentRow[String(memberId)] || 0);
+  const resolveCurrentGroupMemberId = () => {
+    const storedUser = getStoredUser();
+    const candidateIds = [
+      String(getCurrentUserId() || ""),
+      String(currentUser?._id || ""),
+      String(currentUser?.id || ""),
+      String(currentUser?.userId || ""),
+      String(storedUser?._id || ""),
+      String(storedUser?.id || ""),
+      String(storedUser?.userId || "")
+    ].filter(Boolean);
+
+    const directMember = (groupMembers || []).find((member) => {
+      const memberId = String(member?._id || member?.id || "");
+      return memberId && candidateIds.includes(memberId);
+    });
+
+    if (directMember) {
+      return String(directMember._id || directMember.id || "");
+    }
+
+    const candidateEmails = [
+      String(currentUser?.email || "").trim().toLowerCase(),
+      String(storedUser?.email || "").trim().toLowerCase()
+    ].filter(Boolean);
+    const candidateNames = [
+      String(currentUser?.name || "").trim().toLowerCase(),
+      String(storedUser?.name || "").trim().toLowerCase()
+    ].filter(Boolean);
+
+    const byIdentity = (groupMembers || []).find((member) => {
+      const memberEmail = String(member?.email || "").trim().toLowerCase();
+      const memberName = String(member?.name || "").trim().toLowerCase();
+      return (memberEmail && candidateEmails.includes(memberEmail))
+        || (memberName && candidateNames.includes(memberName));
+    });
+
+    return byIdentity ? String(byIdentity._id || byIdentity.id || "") : "";
+  };
+
+  const getMatrixCentsForPair = (fromMemberId, toMemberId) => {
+    if (!fromMemberId || !toMemberId) {
+      return 0;
+    }
+
+    const forward = Number(effectiveBalanceMatrix?.[String(fromMemberId)]?.[String(toMemberId)] ?? 0);
+    if (forward !== 0) {
+      return forward;
+    }
+
+    const reverse = Number(effectiveBalanceMatrix?.[String(toMemberId)]?.[String(fromMemberId)] ?? 0);
+    return reverse !== 0 ? -reverse : 0;
+  };
+
+  const getMemberBalanceSummary = (memberId) => {
+    const loggedInMemberId = resolveCurrentGroupMemberId();
+    const matrixCents = (currentUserBalances && Object.keys(currentUserBalances).length > 0)
+      ? Number(currentUserBalances[String(memberId)] || 0)
+      : getMatrixCentsForPair(loggedInMemberId, String(memberId));
     // Match the debug table convention where displayed rawCents is sign-inverted.
     const displayRawCents = -matrixCents;
     const absAmount = formatMoney(fromCents(Math.abs(displayRawCents)));
@@ -182,7 +246,7 @@ function Dashboard() {
   };
 
   const getCurrentUserGroupPeers = () => {
-    const currentUserId = String(getCurrentUserId() || "");
+    const currentUserId = String(resolveCurrentGroupMemberId() || "");
     return Array.isArray(groupMembers)
       ? groupMembers.filter((member) => String(member?._id || member?.id || "") !== currentUserId)
       : [];
