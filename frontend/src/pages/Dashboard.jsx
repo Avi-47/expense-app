@@ -216,11 +216,61 @@ function Dashboard() {
     return reverse !== 0 ? -reverse : 0;
   };
 
+  const hasNonZeroRowValues = (row = {}) => Object.values(row || {}).some((value) => Number(value) !== 0);
+
+  const getMemberById = (memberId) => (groupMembers || []).find(
+    (member) => String(member?._id || member?.id || "") === String(memberId || "")
+  );
+
+  const getMemberKeyAliases = (member) => {
+    if (!member) return [];
+
+    const aliases = [
+      String(member?._id || "").trim(),
+      String(member?.id || "").trim(),
+      String(member?.name || "").trim(),
+      String(member?.email || "").trim()
+    ].filter(Boolean);
+
+    return [...new Set(aliases)];
+  };
+
+  const resolveMatrixRowKeyForMemberId = (memberId) => {
+    const matrixKeys = Object.keys(effectiveBalanceMatrix || {});
+    if (matrixKeys.length === 0) return "";
+
+    const member = getMemberById(memberId);
+    const aliases = getMemberKeyAliases(member);
+    return aliases.find((alias) => matrixKeys.includes(alias)) || "";
+  };
+
+  const getValueFromRowByMemberId = (row = {}, memberId = "") => {
+    const member = getMemberById(memberId);
+    const aliases = getMemberKeyAliases(member);
+
+    for (const alias of aliases) {
+      const value = Number(row?.[alias] ?? 0);
+      if (value !== 0) {
+        return value;
+      }
+    }
+
+    // If all aliases are either absent or zero, return the first present numeric value (including 0).
+    for (const alias of aliases) {
+      if (Object.prototype.hasOwnProperty.call(row || {}, alias)) {
+        return Number(row?.[alias] ?? 0);
+      }
+    }
+
+    return 0;
+  };
+
   const getMemberBalanceSummary = (memberId) => {
     const loggedInMemberId = resolveCurrentGroupMemberId();
-    const matrixCents = (currentUserBalances && Object.keys(currentUserBalances).length > 0)
-      ? Number(currentUserBalances[String(memberId)] || 0)
-      : getMatrixCentsForPair(loggedInMemberId, String(memberId));
+    const matrixRowKey = resolveMatrixRowKeyForMemberId(loggedInMemberId) || String(loggedInMemberId || "");
+    const matrixRow = matrixRowKey ? (effectiveBalanceMatrix?.[matrixRowKey] || {}) : {};
+    const authoritativeRow = hasNonZeroRowValues(currentUserBalances) ? currentUserBalances : matrixRow;
+    const matrixCents = getValueFromRowByMemberId(authoritativeRow, memberId);
     // Match the debug table convention where displayed rawCents is sign-inverted.
     const displayRawCents = -matrixCents;
     const absAmount = formatMoney(fromCents(Math.abs(displayRawCents)));
