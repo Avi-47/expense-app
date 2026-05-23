@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useContext, useCallback } from "react";
 import api from "../services/api";
 import { connectSocket } from "../services/socket";
 import { AuthContext } from "../context/AuthContext";
-import { formatMoney } from "../utils/money";
+import { formatMoney, fromCents } from "../utils/money";
+import { logExpenseSplitDetails, logBalanceMatrix } from "../utils/expenseLogger";
 
 const formatMessageDate = (timestamp) => {
   if (!timestamp) return null;
@@ -157,15 +158,33 @@ function Group() {
   };
 
   const fetchBalances = async () => {
-    const res = await api.get(`/settlement/${groupId}/balances`, {
-      params: { t: Date.now() },
-      headers: {
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache"
+    try {
+      const res = await api.get(`/settlement/${groupId}/balances`, {
+        params: { t: Date.now() },
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache"
+        }
+      });
+      console.log("BALANCES RESPONSE:", JSON.stringify(res.data, null, 2));
+      setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
+    } catch (err) {
+      console.warn("Balances fetch failed, rebuilding ledger once:", err?.response?.status || err.message);
+      try {
+        await api.post(`/settlement/${groupId}/rebuild`);
+        const retry = await api.get(`/settlement/${groupId}/balances`, {
+          params: { t: Date.now() },
+          headers: {
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache"
+          }
+        });
+        console.log("BALANCES RETRY RESPONSE:", JSON.stringify(retry.data, null, 2));
+        setBalances(retry.data.balances && typeof retry.data.balances === "object" ? retry.data.balances : {});
+      } catch (retryErr) {
+        console.error("Error refreshing balances after rebuild:", retryErr);
       }
-    });
-    console.log("BALANCES RESPONSE:", JSON.stringify(res.data, null, 2));
-    setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
+    }
   };
 
   const resolveMemberName = useCallback((userId) => {
@@ -181,14 +200,14 @@ function Group() {
     if (netAmount > 0) {
       return {
         state: "incoming",
-        label: `owes you ₹${formatMoney(netAmount)}`
+        label: `owes you ₹${formatMoney(fromCents(netAmount))}`
       };
     }
 
     if (netAmount < 0) {
       return {
         state: "outgoing",
-        label: `You owe ₹${formatMoney(Math.abs(netAmount))}`
+        label: `You owe ₹${formatMoney(fromCents(Math.abs(netAmount)))}`
       };
     }
 
@@ -217,6 +236,14 @@ function Group() {
   }, [groupId]);
 
   useEffect(() => {
+    if (!members || members.length === 0) {
+      return;
+    }
+
+    logBalanceMatrix(balances && typeof balances === "object" ? balances : {}, members, groupId);
+  }, [balances, members, groupId]);
+
+  useEffect(() => {
     if (!socket) return;
 
     console.log("[SOCKET] emitting join_group for groupId:", groupId);
@@ -235,6 +262,7 @@ function Group() {
     socket.on("expense_added", (expense) => {
       console.log("[SOCKET] expense_added event received:", expense);
       if (expense?.groupId && String(expense.groupId) === String(groupId)) {
+        logExpenseSplitDetails(expense, members);
         console.log("[SOCKET] → calling fetchBalances due to expense_added");
         fetchBalances();
       } else {

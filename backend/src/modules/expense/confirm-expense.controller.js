@@ -30,6 +30,67 @@ const toCents = (value) => {
 
 const fromCents = (cents) => cents / 100;
 
+const formatMoney = (cents) => `₹${fromCents(cents).toFixed(2)}`;
+
+const getUserLabelMap = (group) => {
+  const labels = new Map();
+
+  for (const member of group && group.members ? group.members : []) {
+    const userId = toUserId(member && (member._id || member.id || member));
+    if (!userId) {
+      continue;
+    }
+
+    const name = member && typeof member === "object" && typeof member.name === "string" ? member.name.trim() : "";
+    labels.set(userId, name || userId);
+  }
+
+  return labels;
+};
+
+const logExpenseSplitDetails = ({ group, groupId, description, amount, splits, settlements }) => {
+  const title = description && description.trim() ? description.trim() : "Expense";
+  const labelMap = getUserLabelMap(group);
+  const getLabel = (userId) => labelMap.get(toUserId(userId)) || toUserId(userId);
+
+  console.group(`[EXPENSE SPLIT] ${title} | group=${groupId} | amount=${formatMoney(toCents(amount))}`);
+
+  console.log("Split summary:");
+  console.table((splits || []).map((split) => ({
+    user: getLabel(split.user),
+    share: formatMoney(toCents(split.amount)),
+    paid: formatMoney(toCents(split.paidAmount)),
+    status: split.status
+  })));
+
+  if ((settlements || []).length === 0) {
+    console.log("No transfers needed. Everyone is settled.");
+  } else {
+    console.log("Transfers:");
+    for (const settlement of settlements) {
+      const amountLabel = formatMoney(toCents(settlement.amount));
+      console.log(`${getLabel(settlement.fromUser)} has to pay ${getLabel(settlement.toUser)} ${amountLabel}`);
+      console.log(`${getLabel(settlement.toUser)} will get ${amountLabel} from ${getLabel(settlement.fromUser)}`);
+    }
+  }
+
+  const netByUser = new Map();
+  for (const split of splits || []) {
+    const shareCents = toCents(split.amount);
+    const paidCents = toCents(split.paidAmount);
+    netByUser.set(split.user, (netByUser.get(split.user) || 0) + (paidCents - shareCents));
+  }
+
+  console.log("Net position by user:");
+  console.table([...netByUser.entries()].map(([user, netCents]) => ({
+    user: getLabel(user),
+    position: netCents > 0 ? "receives" : netCents < 0 ? "owes" : "settled",
+    amount: formatMoney(Math.abs(netCents))
+  })));
+
+  console.groupEnd();
+};
+
 const negateMatrix = (matrix) => {
   const result = {};
 
@@ -250,7 +311,7 @@ const calculateSplits = (amount, participants, payers) => {
 };
 
 const getValidatedGroupParticipants = async (groupId, involvedUsers) => {
-  const group = await Group.findById(groupId).select("members");
+  const group = await Group.findById(groupId).populate("members", "name");
   if (!group) {
     return { error: "Group not found", status: 404, participants: [] };
   }
@@ -271,13 +332,20 @@ exports.confirmExpense = async (req, res) => {
     const { groupId } = req.params;
     const { description, amount, involvedUsers, payers } = req.body || {};
 
-    const { error, status, participants } = await getValidatedGroupParticipants(groupId, involvedUsers);
+    const { error, status, group, participants } = await getValidatedGroupParticipants(groupId, involvedUsers);
     if (error) {
       return res.status(status || 400).json({ message: error });
     }
 
     const splitResult = calculateSplits(amount, participants, payers);
-    const memberIds = (group.members || []).map((member) => toUserId(member._id || member.id));
+    logExpenseSplitDetails({
+      group,
+      groupId,
+      description,
+      amount: splitResult.amount,
+      splits: splitResult.splits,
+      settlements: splitResult.settlements
+    });
 
     await engine.ensureGroupBalanceDoc(groupId);
 
@@ -290,17 +358,8 @@ exports.confirmExpense = async (req, res) => {
       splits: splitResult.splits
     });
 
-    // Build netByUser (cents) for this expense and merge incrementally into ledger
-    const netByUser = new Map();
-    for (const s of splitResult.splits) {
-      const userId = toUserId(s.user);
-      const shareCents = toCents(s.amount);
-      const paidCents = toCents(s.paidAmount);
-      netByUser.set(userId, (netByUser.get(userId) || 0) + (paidCents - shareCents));
-    }
-
-    const intermediate = await engine.buildIntermediateMatrix(netByUser, memberIds);
-    await engine.mergeIntermediateIntoLedger(groupId, intermediate);
+    // Rebuild from persisted expenses so the stored ledger always matches source of truth.
+    await engine.rebuildGroupMatrix(groupId);
 
     // Debug: log canonical ledger edges after merge
     try {
@@ -310,11 +369,14 @@ exports.confirmExpense = async (req, res) => {
     }
 
     const io = getIO();
-    io.to(groupId).emit("expense_added", expense);
+    const expensePayload = typeof expense.toObject === "function"
+      ? { ...expense.toObject(), settlements: splitResult.settlements }
+      : { ...expense, settlements: splitResult.settlements };
+    io.to(groupId).emit("expense_added", expensePayload);
     io.to(groupId).emit("balances_updated", { groupId });
 
     return res.status(201).json({
-      expense,
+      expense: expensePayload,
       settlements: splitResult.settlements
     });
   } catch (error) {
@@ -333,17 +395,7 @@ exports.deleteExpense = async (req, res) => {
 
     const groupId = toUserId(expense.groupId);
     await Expense.deleteOne({ _id: expenseId });
-    // Remove expense effect incrementally: compute net for deleted expense and merge reversed deltas
-    const netByUser = new Map();
-    for (const split of expense.splits || []) {
-      const userId = toUserId(split.user);
-      const shareCents = toCents(split.amount);
-      const paidCents = toCents(split.paidAmount);
-      netByUser.set(userId, (netByUser.get(userId) || 0) + (paidCents - shareCents));
-    }
-    const memberIds = await engine.getGroupMatrix(groupId).then((matrix) => Object.keys(matrix || {}));
-    const intermediate = await engine.buildIntermediateMatrix(netByUser, memberIds);
-    await engine.mergeIntermediateIntoLedger(groupId, negateMatrix(intermediate));
+    await engine.rebuildGroupMatrix(groupId);
     try {
       console.log("[LEDGER AFTER DELETE]", await Balance.find({ groupId }));
     } catch (e) {
@@ -377,7 +429,6 @@ exports.editExpense = async (req, res) => {
     }
 
     const splitResult = calculateSplits(amount, participants, payers);
-    const memberIds = (group.members || []).map((member) => toUserId(member._id || member.id));
 
     await engine.ensureGroupBalanceDoc(groupId);
 
@@ -401,19 +452,8 @@ exports.editExpense = async (req, res) => {
     // Save new expense
     const savedExpense = await existingExpense.save();
 
-    // AFTER saving: compute new intermediate and apply delta (reverse old, then add new)
-    const newNet = new Map();
-    for (const split of splitResult.splits || []) {
-      const userId = toUserId(split.user);
-      const shareCents = toCents(split.amount);
-      const paidCents = toCents(split.paidAmount);
-      newNet.set(userId, (newNet.get(userId) || 0) + (paidCents - shareCents));
-    }
-
-    const newIntermediate = await engine.buildIntermediateMatrix(newNet, memberIds);
-
-    await engine.mergeIntermediateIntoLedger(groupId, negateMatrix(oldIntermediate));
-    await engine.mergeIntermediateIntoLedger(groupId, newIntermediate);
+    // Rebuild from persisted expenses so edits never drift from the saved expense history.
+    await engine.rebuildGroupMatrix(groupId);
 
     try {
       console.log("[LEDGER AFTER EDIT]", await Balance.find({ groupId }));

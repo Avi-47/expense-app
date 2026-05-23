@@ -16,34 +16,6 @@ app.get("/debug/expenses", async (req, res) => {
   }
 });
 
-const listenWithFallback = (server, startPort) => {
-  let currentPort = Number(startPort) || 62000;
-  const maxAttempts = 20;
-  let attempts = 0;
-
-  const attemptListen = () => {
-    attempts += 1;
-
-    server.once("error", (err) => {
-      if (err.code === "EADDRINUSE" && attempts < maxAttempts) {
-        console.warn(`[10] Port ${currentPort} in use, trying ${currentPort + 1}...`);
-        currentPort += 1;
-        setTimeout(attemptListen, 100);
-        return;
-      }
-
-      console.error("[10] Server listen error:", err.message);
-      process.exit(1);
-    });
-
-    server.listen(currentPort, "0.0.0.0", () => {
-      console.log(`[9] Server is running on port ${currentPort}`);
-    });
-  };
-
-  attemptListen();
-};
-
 const startServer = async () => {
   try {
     console.log("[1] Connecting to MongoDB...");
@@ -67,7 +39,14 @@ const startServer = async () => {
 
     console.log(`[8] About to listen on port ${PORT}...`);
 
-    listenWithFallback(server, PORT);
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`[9] Server is running on port ${PORT}`);
+    });
+
+    server.on("error", (err) => {
+      console.error("[10] Server listen error:", err.message);
+      process.exit(1);
+    });
 
     console.log("[11] Listen called, waiting for port...");
   } catch (err) {

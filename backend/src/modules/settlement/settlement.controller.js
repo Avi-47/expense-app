@@ -32,7 +32,8 @@ exports.getBalances = async (req, res) => {
 
     console.log(`\n[GET_BALANCES] Request received for group ${groupId} from user ${currentUserId}`);
 
-    const balances = await getGroupMatrix(groupId);
+    // Always rebuild from persisted expenses so every member sees the same canonical group ledger.
+    const balances = await engine.rebuildGroupMatrix(groupId);
     const currentUserBalances = balances[currentUserId] || {};
 
     console.log("=== GET BALANCES DEBUG ===");

@@ -48,19 +48,8 @@ exports.confirmExpense = async (req, res) => {
       splits
     });
 
-    // 5️⃣ Incremental ledger update for this expense
-    const memberIds = group.members.map((member) => member._id.toString());
-    const amountCents = Math.round(Number(amount) * 100);
-    const netByUser = new Map();
-    for (const s of splits) {
-      const userId = String(s.user);
-      const shareCents = Math.round(Number(s.amount) * 100);
-      const paidCents = userId === String(req.user.id) ? amountCents : 0;
-      netByUser.set(userId, (netByUser.get(userId) || 0) + (paidCents - shareCents));
-    }
-
-    const intermediate = await engine.buildIntermediateMatrix(netByUser, memberIds);
-    await engine.mergeIntermediateIntoLedger(groupId, intermediate);
+    // 5️⃣ Rebuild the persisted ledger from expenses so refresh always sees the real matrix.
+    await engine.rebuildGroupMatrix(groupId);
     try {
       console.log("[LEDGER AFTER CREATE]", await Balance.find({ groupId }));
     } catch (e) {

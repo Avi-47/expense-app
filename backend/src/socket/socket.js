@@ -233,17 +233,9 @@ const initSocket = (server) => {
               description: "Auto detected expense",
               splits
             });
-            // Incremental ledger update for this expense
-            const netByUser = new Map();
-            for (const s of splits) {
-              const userId = String(s.user);
-              const shareCents = Math.round(Number(s.amount) * 100);
-              const paidCents = Math.round(Number(s.paidAmount || 0) * 100);
-              netByUser.set(userId, (netByUser.get(userId) || 0) + (paidCents - shareCents));
-            }
 
-            const intermediate = await engine.buildIntermediateMatrix(netByUser);
-            await engine.mergeIntermediateIntoLedger(groupId, intermediate);
+            // Rebuild from persisted expenses so the saved group balance survives refreshes.
+            await engine.rebuildGroupMatrix(groupId);
             try {
               console.log("[LEDGER AFTER SOCKET CREATE]", await Balance.find({ groupId }));
             } catch (e) {

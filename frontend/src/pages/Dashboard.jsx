@@ -4,7 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { connectSocket } from "../services/socket";
 import { AuthContext } from "../context/AuthContext";
 import { useContext } from "react";
-import { formatMoney } from "../utils/money";
+import { formatMoney, fromCents } from "../utils/money";
+import { logExpenseSplitDetails, logBalanceMatrix } from "../utils/expenseLogger";
 
 function Dashboard() {
   const { user, token } = useContext(AuthContext);
@@ -63,20 +64,40 @@ function Dashboard() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [addMemberSearch, setAddMemberSearch] = useState("");
   const [isSavingExpense, setIsSavingExpense] = useState(false);
+  const effectiveBalanceMatrix = balances && typeof balances === "object" ? balances : {};
 
-  const refreshGroupBalances = async (groupId) => {
+  const fetchBalancesMatrix = async (groupId) => {
+    const res = await api.get(`/settlement/${groupId}/balances`, {
+      params: { t: Date.now() },
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache"
+      }
+    });
+
+    return res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {};
+  };
+
+  const refreshGroupBalances = async (groupId, options = {}) => {
+    const { forceRebuild = false } = options;
     if (!groupId) return;
+
     try {
-      const res = await api.get(`/settlement/${groupId}/balances`, {
-        params: { t: Date.now() },
-        headers: {
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache"
-        }
-      });
-      setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
+      if (forceRebuild) {
+        await api.post(`/settlement/${groupId}/rebuild`, null, { params: { t: Date.now() } });
+      }
+
+      const matrix = await fetchBalancesMatrix(groupId);
+      setBalances(matrix);
     } catch (err) {
-      console.error("Error refreshing balances:", err);
+      console.warn("Balances fetch failed, rebuilding ledger once:", err?.response?.status || err.message);
+      try {
+        await api.post(`/settlement/${groupId}/rebuild`, null, { params: { t: Date.now() } });
+        const retry = await fetchBalancesMatrix(groupId);
+        setBalances(retry);
+      } catch (retryErr) {
+        console.error("Error refreshing balances after rebuild:", retryErr);
+      }
     }
   };
 
@@ -86,29 +107,55 @@ function Dashboard() {
   };
 
   const getMemberBalanceSummary = (memberId) => {
-    const currentUserId = getCurrentUserId();
-    const currentRow = balances?.[currentUserId] || {};
-    const netAmount = Number(currentRow[String(memberId)] || 0);
+    const currentUserIdCandidates = [
+      String(getCurrentUserId() || ""),
+      String(currentUser?._id || ""),
+      String(currentUser?.id || "")
+    ].filter(Boolean);
 
-    if (netAmount > 0) {
+    const currentRow = currentUserIdCandidates
+      .map((id) => effectiveBalanceMatrix?.[id])
+      .find((row) => row && typeof row === "object") || {};
+
+    const matrixCents = Number(currentRow[String(memberId)] || 0);
+    // Match the debug table convention where displayed rawCents is sign-inverted.
+    const displayRawCents = -matrixCents;
+    const absAmount = formatMoney(fromCents(Math.abs(displayRawCents)));
+
+    if (displayRawCents > 0) {
       return {
-        state: "incoming",
-        label: `owes you ₹${formatMoney(netAmount)}`
+        state: "positive",
+        valueText: `+₹${absAmount}`
       };
     }
 
-    if (netAmount < 0) {
+    if (displayRawCents < 0) {
       return {
-        state: "outgoing",
-        label: `You owe ₹${formatMoney(Math.abs(netAmount))}`
+        state: "negative",
+        valueText: `-₹${absAmount}`
       };
     }
 
     return {
       state: "settled",
-      label: "settled"
+      valueText: "₹0.00"
     };
   };
+
+  const getCurrentUserGroupPeers = () => {
+    const currentUserId = String(getCurrentUserId() || "");
+    return Array.isArray(groupMembers)
+      ? groupMembers.filter((member) => String(member?._id || member?.id || "") !== currentUserId)
+      : [];
+  };
+
+  useEffect(() => {
+    if (!selectedChat?._id || chatType !== "group" || !groupMembers || groupMembers.length === 0) {
+      return;
+    }
+
+    logBalanceMatrix(effectiveBalanceMatrix && typeof effectiveBalanceMatrix === "object" ? effectiveBalanceMatrix : {}, groupMembers, selectedChat?._id);
+  }, [effectiveBalanceMatrix, groupMembers, selectedChat?._id, chatType]);
 
   // Close slide panel when switching chats
   useEffect(() => {
@@ -274,6 +321,7 @@ function Dashboard() {
       const eventGroupId = expense?.groupId ? String(expense.groupId) : "";
 
       if (chatType === 'group' && activeGroupId && activeGroupId === eventGroupId) {
+        logExpenseSplitDetails(expense, groupMembers);
         const payersList = expense.payers?.map(p => `${p.user?.name || 'Someone'} (₹${p.amount})`).join(', ') || "Someone";
         const memberCount = expense.splits?.length || 0;
         const amount = expense.amount;
@@ -823,9 +871,9 @@ function Dashboard() {
                   {chatType === 'group' && (
                     <div className="px-6 pb-4">
                       <h4 className="text-sm font-semibold text-gray-300 mb-2">Balance Details</h4>
-                      {Array.isArray(groupMembers) && groupMembers.length > 0 ? (
+                      {getCurrentUserGroupPeers().length > 0 ? (
                         <div className="space-y-1">
-                          {groupMembers.map((member, index) => {
+                          {getCurrentUserGroupPeers().map((member, index) => {
                             const memberId = member._id || member.id;
                             const summary = getMemberBalanceSummary(memberId);
                             const memberName = member.name || member.email || String(memberId);
@@ -833,10 +881,18 @@ function Dashboard() {
                             return (
                               <div
                                 key={`${memberId}-${index}`}
-                                className={`flex justify-between text-xs ${summary.state === "incoming" ? "text-green-500" : summary.state === "outgoing" ? "text-red-500" : "text-gray-400"}`}
+                                className="flex justify-between text-xs"
                               >
                                 <span>{memberName}</span>
-                                <span>{summary.label}</span>
+                                {summary.state === "positive" ? (
+                                  <span className="bg-green-600 text-white font-bold px-2 py-0.5 rounded">
+                                    {summary.valueText}
+                                  </span>
+                                ) : summary.state === "negative" ? (
+                                  <span className="text-red-500 font-bold">{summary.valueText}</span>
+                                ) : (
+                                  <span className="text-gray-400 font-bold">{summary.valueText}</span>
+                                )}
                               </div>
                             );
                           })}
@@ -1283,9 +1339,9 @@ function Dashboard() {
 
             <div className="mb-4">
               <h4 className="text-sm font-semibold text-gray-300 mb-2">Individual Balances:</h4>
-              {Array.isArray(groupMembers) && groupMembers.length > 0 ? (
+              {getCurrentUserGroupPeers().length > 0 ? (
                 <div className="space-y-1">
-                  {groupMembers.map((member, index) => {
+                  {getCurrentUserGroupPeers().map((member, index) => {
                     const memberId = member._id || member.id;
                     const summary = getMemberBalanceSummary(memberId);
                     const memberName = member.name || member.email || String(memberId);
@@ -1293,10 +1349,18 @@ function Dashboard() {
                     return (
                       <div
                         key={`${memberId}-${index}`}
-                        className={`flex justify-between p-2 rounded ${summary.state === "incoming" ? "text-green-500" : summary.state === "outgoing" ? "text-red-500" : "text-gray-400"}`}
+                        className="flex justify-between p-2 rounded"
                       >
                         <span>{memberName}</span>
-                        <span className="font-semibold">{summary.label}</span>
+                        {summary.state === "positive" ? (
+                          <span className="bg-green-600 text-white font-bold px-2 py-0.5 rounded">
+                            {summary.valueText}
+                          </span>
+                        ) : summary.state === "negative" ? (
+                          <span className="text-red-500 font-bold">{summary.valueText}</span>
+                        ) : (
+                          <span className="text-gray-400 font-bold">{summary.valueText}</span>
+                        )}
                       </div>
                     );
                   })}

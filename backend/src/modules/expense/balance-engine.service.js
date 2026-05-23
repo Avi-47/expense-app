@@ -3,6 +3,18 @@ const Expense = require("./expense.model");
 const Settlement = require("./settlement.model");
 const GroupBalance = require("./balance.model");
 
+const toUserId = (value) => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "object") {
+    return String(value._id || value.id || "").trim();
+  }
+
+  return String(value).trim();
+};
+
 const toCents = (value) => {
   if (value === null || value === undefined) throw new Error("Amount is required");
   const raw = String(value).trim();
@@ -99,6 +111,18 @@ const getMatrixDoc = async (groupId) => {
   return await GroupBalance.findOne({ groupId });
 };
 
+const loadPersistedMatrix = async (groupId) => {
+  const doc = await getMatrixDoc(groupId);
+  if (!doc || !doc.matrix) {
+    return null;
+  }
+
+  return {
+    doc,
+    matrix: normalizeMatrixShape(doc.matrix || {})
+  };
+};
+
 const saveMatrixDoc = async (groupId, matrix) => {
   const normalized = normalizeMatrixShape(matrix);
   return await GroupBalance.findOneAndUpdate(
@@ -157,20 +181,47 @@ const mergeMatrixIntoTarget = (targetMatrix, deltaMatrix) => {
   }
 };
 
+const hasNonZeroValues = (matrix) => {
+  for (const row of Object.values(matrix || {})) {
+    for (const value of Object.values(row || {})) {
+      if (Number(value) !== 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
 const ensureGroupBalanceDoc = async (groupId) => {
-  const existing = await getMatrixDoc(groupId);
-  if (existing && existing.matrix) {
+  const persisted = await loadPersistedMatrix(groupId);
+  const existing = persisted && persisted.doc ? persisted.doc : null;
+  const existingMatrix = persisted ? persisted.matrix : null;
+
+  if (existingMatrix && hasNonZeroValues(existingMatrix)) {
     const memberIds = await getGroupMemberIds(groupId);
-    const normalized = normalizeMatrixShape(existing.matrix, memberIds);
-    if (JSON.stringify(normalized) !== JSON.stringify(existing.matrix || {})) {
+    const normalized = normalizeMatrixShape(existingMatrix, memberIds);
+    if (JSON.stringify(normalized) !== JSON.stringify(existingMatrix || {})) {
       existing.matrix = normalized;
       await existing.save();
     }
     return existing;
   }
 
-  const matrix = await buildMatrixFromExpenses(groupId);
-  return await saveMatrixDoc(groupId, matrix);
+  try {
+    const matrix = await buildMatrixFromExpenses(groupId);
+    return await saveMatrixDoc(groupId, matrix);
+  } catch (error) {
+    const memberIds = await getGroupMemberIds(groupId).catch(() => []);
+    const fallbackMatrix = createEmptyMatrix(memberIds);
+
+    if (existing) {
+      existing.matrix = normalizeMatrixShape(existingMatrix || fallbackMatrix, memberIds);
+      await existing.save();
+      return existing;
+    }
+
+    return await saveMatrixDoc(groupId, fallbackMatrix);
+  }
 };
 
 /**
@@ -259,13 +310,15 @@ async function applySettlement(groupId, fromUser, toUser, amount) {
  */
 async function getUserBalances(groupId, currentUserId) {
   const doc = await ensureGroupBalanceDoc(groupId);
-  const matrix = normalizeMatrixShape(doc.matrix || {});
+  const memberIds = await getGroupMemberIds(groupId).catch(() => []);
+  const matrix = normalizeMatrixShape(doc.matrix || {}, memberIds);
   return matrix[String(currentUserId)] || {};
 }
 
 async function getGroupMatrix(groupId) {
   const doc = await ensureGroupBalanceDoc(groupId);
-  return normalizeMatrixShape(doc.matrix || {});
+  const memberIds = await getGroupMemberIds(groupId).catch(() => []);
+  return normalizeMatrixShape(doc.matrix || {}, memberIds);
 }
 
 async function rebuildGroupMatrix(groupId) {

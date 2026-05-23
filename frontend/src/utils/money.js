@@ -6,6 +6,8 @@ export const formatMoney = (value) => {
   }).format(amount);
 };
 
+export const fromCents = (cents) => Number(cents || 0) / 100;
+
 export const formatBalanceLabel = ({ direction, amount, otherUserName }) => {
   const formatted = formatMoney(amount);
 
