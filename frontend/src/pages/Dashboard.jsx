@@ -106,16 +106,45 @@ function Dashboard() {
     return member?.name || member?.email || String(userId);
   };
 
-  const getMemberBalanceSummary = (memberId) => {
-    const currentUserIdCandidates = [
+  const resolveCurrentUserMatrixKey = () => {
+    const matrixKeys = Object.keys(effectiveBalanceMatrix || {});
+    if (matrixKeys.length === 0) {
+      return "";
+    }
+
+    const directCandidates = [
       String(getCurrentUserId() || ""),
       String(currentUser?._id || ""),
       String(currentUser?.id || "")
     ].filter(Boolean);
 
-    const currentRow = currentUserIdCandidates
-      .map((id) => effectiveBalanceMatrix?.[id])
-      .find((row) => row && typeof row === "object") || {};
+    const directMatch = directCandidates.find((id) => matrixKeys.includes(id));
+    if (directMatch) {
+      return directMatch;
+    }
+
+    // Fallback: map logged-in user identity to group member and then to matrix key.
+    const userEmail = String(currentUser?.email || "").trim().toLowerCase();
+    const userName = String(currentUser?.name || "").trim().toLowerCase();
+
+    const matchedMember = (groupMembers || []).find((member) => {
+      const memberEmail = String(member?.email || "").trim().toLowerCase();
+      const memberName = String(member?.name || "").trim().toLowerCase();
+      return (userEmail && memberEmail && userEmail === memberEmail)
+        || (userName && memberName && userName === memberName);
+    });
+
+    const memberId = String(matchedMember?._id || matchedMember?.id || "");
+    if (memberId && matrixKeys.includes(memberId)) {
+      return memberId;
+    }
+
+    return "";
+  };
+
+  const getMemberBalanceSummary = (memberId) => {
+    const currentUserMatrixKey = resolveCurrentUserMatrixKey();
+    const currentRow = (currentUserMatrixKey && effectiveBalanceMatrix?.[currentUserMatrixKey]) || {};
 
     const matrixCents = Number(currentRow[String(memberId)] || 0);
     // Match the debug table convention where displayed rawCents is sign-inverted.
