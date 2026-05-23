@@ -57,6 +57,7 @@ function Dashboard() {
   const [selectAll, setSelectAll] = useState(false);
   const [groupMembers, setGroupMembers] = useState([]);
   const [balances, setBalances] = useState({});
+  const [currentUserBalances, setCurrentUserBalances] = useState({});
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [menuOpenMsgId, setMenuOpenMsgId] = useState(null);
   const [showSlidePanel, setShowSlidePanel] = useState(false);
@@ -75,7 +76,12 @@ function Dashboard() {
       }
     });
 
-    return res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {};
+    const matrix = res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {};
+    const row = res.data.currentUserBalances && typeof res.data.currentUserBalances === "object"
+      ? res.data.currentUserBalances
+      : {};
+
+    return { matrix, row };
   };
 
   const refreshGroupBalances = async (groupId, options = {}) => {
@@ -87,14 +93,16 @@ function Dashboard() {
         await api.post(`/settlement/${groupId}/rebuild`, null, { params: { t: Date.now() } });
       }
 
-      const matrix = await fetchBalancesMatrix(groupId);
+      const { matrix, row } = await fetchBalancesMatrix(groupId);
       setBalances(matrix);
+      setCurrentUserBalances(row);
     } catch (err) {
       console.warn("Balances fetch failed, rebuilding ledger once:", err?.response?.status || err.message);
       try {
         await api.post(`/settlement/${groupId}/rebuild`, null, { params: { t: Date.now() } });
-        const retry = await fetchBalancesMatrix(groupId);
-        setBalances(retry);
+        const { matrix: retryMatrix, row: retryRow } = await fetchBalancesMatrix(groupId);
+        setBalances(retryMatrix);
+        setCurrentUserBalances(retryRow);
       } catch (retryErr) {
         console.error("Error refreshing balances after rebuild:", retryErr);
       }
@@ -144,7 +152,9 @@ function Dashboard() {
 
   const getMemberBalanceSummary = (memberId) => {
     const currentUserMatrixKey = resolveCurrentUserMatrixKey();
-    const currentRow = (currentUserMatrixKey && effectiveBalanceMatrix?.[currentUserMatrixKey]) || {};
+    const currentRow = (currentUserBalances && Object.keys(currentUserBalances).length > 0)
+      ? currentUserBalances
+      : ((currentUserMatrixKey && effectiveBalanceMatrix?.[currentUserMatrixKey]) || {});
 
     const matrixCents = Number(currentRow[String(memberId)] || 0);
     // Match the debug table convention where displayed rawCents is sign-inverted.
@@ -519,6 +529,7 @@ function Dashboard() {
         }
       });
       setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
+      setCurrentUserBalances(res.data.currentUserBalances && typeof res.data.currentUserBalances === "object" ? res.data.currentUserBalances : {});
       setShowBalanceModal(true);
     } catch (err) {
       console.error("Error fetching balances:", err);
