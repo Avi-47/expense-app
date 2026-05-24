@@ -60,6 +60,7 @@ function Dashboard() {
   const [currentUserBalances, setCurrentUserBalances] = useState({});
   const [currentUserMatrixKey, setCurrentUserMatrixKey] = useState("");
   const [balanceDetails, setBalanceDetails] = useState([]);
+  const [stableBalanceDetails, setStableBalanceDetails] = useState([]);
   const [balancesLoading, setBalancesLoading] = useState(false);
   const [balancesError, setBalancesError] = useState("");
   const [showBalanceModal, setShowBalanceModal] = useState(false);
@@ -91,10 +92,12 @@ function Dashboard() {
   };
 
   const refreshGroupBalances = async (groupId, options = {}) => {
-    const { forceRebuild = false } = options;
+    const { forceRebuild = false, showLoading = true } = options;
     if (!groupId) return;
 
-    setBalancesLoading(true);
+    if (showLoading) {
+      setBalancesLoading(true);
+    }
     setBalancesError("");
 
     try {
@@ -107,6 +110,9 @@ function Dashboard() {
       setCurrentUserBalances(row);
       setCurrentUserMatrixKey(resolvedKey);
       setBalanceDetails(details);
+      if (Array.isArray(details) && details.length > 0) {
+        setStableBalanceDetails(details);
+      }
     } catch (err) {
       console.warn("Balances fetch failed, rebuilding ledger once:", err?.response?.status || err.message);
       try {
@@ -116,12 +122,17 @@ function Dashboard() {
         setCurrentUserBalances(retryRow);
         setCurrentUserMatrixKey(retryResolvedKey);
         setBalanceDetails(retryDetails);
+        if (Array.isArray(retryDetails) && retryDetails.length > 0) {
+          setStableBalanceDetails(retryDetails);
+        }
       } catch (retryErr) {
         console.error("Error refreshing balances after rebuild:", retryErr);
         setBalancesError(retryErr?.response?.data?.message || retryErr.message || "Failed to load balances");
       }
     } finally {
-      setBalancesLoading(false);
+      if (showLoading) {
+        setBalancesLoading(false);
+      }
     }
   };
 
@@ -457,14 +468,34 @@ function Dashboard() {
   };
 
   const getRenderableBalanceDetails = () => {
-    if (!Array.isArray(balanceDetails)) {
-      return [];
+    if (Array.isArray(balanceDetails) && balanceDetails.length > 0) {
+      const peers = new Set(getCurrentUserGroupPeers().map((member) => String(member?._id || member?.id || "")));
+      return balanceDetails.filter((detail) => {
+        const memberId = String(detail?.memberId || "");
+        return !memberId || peers.size === 0 || peers.has(memberId);
+      });
     }
 
-    const peers = new Set(getCurrentUserGroupPeers().map((member) => String(member?._id || member?.id || "")));
-    return balanceDetails.filter((detail) => {
-      const memberId = String(detail?.memberId || "");
-      return !memberId || peers.size === 0 || peers.has(memberId);
+    const peerMembers = getCurrentUserGroupPeers();
+    return peerMembers.map((member) => {
+      const memberId = String(member?._id || member?.id || "");
+      const rowValue = getValueFromRowByMemberId(currentUserBalances, memberId);
+      const fallbackValue = rowValue !== 0
+        ? rowValue
+        : getPairBalanceFromMatrix(
+            balances,
+            getCurrentUserIdentityAliases(),
+            getMemberKeyAliases(member)
+          );
+      const absAmount = formatMoney(fromCents(Math.abs(fallbackValue)));
+
+      return {
+        memberId,
+        name: member?.name || member?.email || memberId,
+        email: member?.email || "",
+        state: fallbackValue > 0 ? "positive" : fallbackValue < 0 ? "negative" : "settled",
+        valueText: fallbackValue > 0 ? `+₹${absAmount}` : fallbackValue < 0 ? `-₹${absAmount}` : "₹0.00"
+      };
     });
   };
 
@@ -804,6 +835,9 @@ function Dashboard() {
       setCurrentUserBalances(res.data.currentUserBalances && typeof res.data.currentUserBalances === "object" ? res.data.currentUserBalances : {});
       setCurrentUserMatrixKey(String(res.data.currentUserMatrixKey || "").trim());
       setBalanceDetails(Array.isArray(res.data.balanceDetails) ? res.data.balanceDetails : []);
+      if (Array.isArray(res.data.balanceDetails) && res.data.balanceDetails.length > 0) {
+        setStableBalanceDetails(res.data.balanceDetails);
+      }
       setShowBalanceModal(true);
     } catch (err) {
       console.error("Error fetching balances:", err);
@@ -814,7 +848,7 @@ function Dashboard() {
     if (!selectedChat || chatType !== 'group') return;
 
     const intervalId = setInterval(() => {
-      refreshGroupBalances(selectedChat._id);
+      refreshGroupBalances(selectedChat._id, { showLoading: false });
     }, 5000);
 
     return () => clearInterval(intervalId);
@@ -1185,9 +1219,6 @@ function Dashboard() {
                   {chatType === 'group' && (
                     <div className="px-6 pb-4">
                       <h4 className="text-sm font-semibold text-gray-300 mb-2">Balance Details</h4>
-                      {balancesLoading && (
-                        <p className="text-gray-400 text-xs">Loading balances...</p>
-                      )}
                       {!balancesLoading && balancesError && (
                         <p className="text-red-400 text-xs">{balancesError}</p>
                       )}
@@ -1660,9 +1691,7 @@ function Dashboard() {
 
             <div className="mb-4">
               <h4 className="text-sm font-semibold text-gray-300 mb-2">Individual Balances:</h4>
-              {balancesLoading ? (
-                <p className="text-gray-400 text-xs">Loading balances...</p>
-              ) : balancesError ? (
+              {balancesError ? (
                 <p className="text-red-400 text-xs">{balancesError}</p>
               ) : getRenderableBalanceDetails().length > 0 ? (
                 <div className="space-y-1">
