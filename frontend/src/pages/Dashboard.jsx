@@ -449,51 +449,23 @@ function Dashboard() {
     return aliases.find((alias) => matrixKeys.includes(alias)) || "";
   };
 
-  const getMemberBalanceSummary = (memberId) => {
-    const memberIdStr = String(memberId || "");
-    const detail = (balanceDetails || []).find((item) => String(item.memberId || "") === memberIdStr);
-    const member = getMemberById(memberIdStr);
-    const pairBalanceCents = getPairBalanceFromMatrix(
-      effectiveBalanceMatrix,
-      getCurrentUserIdentityAliases(),
-      getMemberKeyAliases(member)
-    );
-    const currentUserRow = getCurrentUserMatrixRow();
-    const rowBalanceCents = getValueFromRowByMemberId(currentUserRow, memberId);
-    const matrixCents = pairBalanceCents !== 0 ? pairBalanceCents : rowBalanceCents;
-
-    if (detail && detail.state && detail.state !== "settled") {
-      return {
-        state: detail.state,
-        valueText: detail.valueText
-      };
-    }
-
-    if (detail && detail.state === "settled" && matrixCents === 0) {
-      return {
-        state: detail.state,
-        valueText: detail.valueText
-      };
-    }
-
-    const absAmount = formatMoney(fromCents(Math.abs(matrixCents)));
-
-    if (matrixCents > 0) {
-      return { state: "positive", valueText: `+₹${absAmount}` };
-    }
-
-    if (matrixCents < 0) {
-      return { state: "negative", valueText: `-₹${absAmount}` };
-    }
-
-    return { state: "settled", valueText: "₹0.00" };
-  };
-
   const getCurrentUserGroupPeers = () => {
     const currentUserId = String(resolveCurrentGroupMemberId() || "");
     return Array.isArray(groupMembers)
       ? groupMembers.filter((member) => String(member?._id || member?.id || "") !== currentUserId)
       : [];
+  };
+
+  const getRenderableBalanceDetails = () => {
+    if (!Array.isArray(balanceDetails)) {
+      return [];
+    }
+
+    const peers = new Set(getCurrentUserGroupPeers().map((member) => String(member?._id || member?.id || "")));
+    return balanceDetails.filter((detail) => {
+      const memberId = String(detail?.memberId || "");
+      return !memberId || peers.size === 0 || peers.has(memberId);
+    });
   };
 
   // Close slide panel when switching chats
@@ -1220,16 +1192,18 @@ function Dashboard() {
                         <p className="text-red-400 text-xs">{balancesError}</p>
                       )}
                       {!balancesLoading && !balancesError && (
-                        getCurrentUserGroupPeers().length > 0 ? (
+                        getRenderableBalanceDetails().length > 0 ? (
                           <div className="space-y-1">
-                            {getCurrentUserGroupPeers().map((member, index) => {
-                              const memberId = member._id || member.id;
-                              const summary = getMemberBalanceSummary(memberId);
-                              const memberName = member.name || member.email || String(memberId);
+                            {getRenderableBalanceDetails().map((detail, index) => {
+                              const summary = {
+                                state: detail.state,
+                                valueText: detail.valueText
+                              };
+                              const memberName = detail.name || detail.email || String(detail.memberId || index);
 
                               return (
                                 <div
-                                  key={`${memberId}-${index}`}
+                                  key={`${detail.memberId || memberName}-${index}`}
                                   className="flex justify-between text-xs"
                                 >
                                   <span>{memberName}</span>
@@ -1690,16 +1664,18 @@ function Dashboard() {
                 <p className="text-gray-400 text-xs">Loading balances...</p>
               ) : balancesError ? (
                 <p className="text-red-400 text-xs">{balancesError}</p>
-              ) : getCurrentUserGroupPeers().length > 0 ? (
+              ) : getRenderableBalanceDetails().length > 0 ? (
                 <div className="space-y-1">
-                  {getCurrentUserGroupPeers().map((member, index) => {
-                    const memberId = member._id || member.id;
-                    const summary = getMemberBalanceSummary(memberId);
-                    const memberName = member.name || member.email || String(memberId);
+                  {getRenderableBalanceDetails().map((detail, index) => {
+                    const summary = {
+                      state: detail.state,
+                      valueText: detail.valueText
+                    };
+                    const memberName = detail.name || detail.email || String(detail.memberId || index);
 
                     return (
                       <div
-                        key={`${memberId}-${index}`}
+                        key={`${detail.memberId || memberName}-${index}`}
                         className="flex justify-between p-2 rounded"
                       >
                         <span>{memberName}</span>
