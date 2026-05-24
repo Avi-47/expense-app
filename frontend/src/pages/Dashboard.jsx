@@ -5,7 +5,7 @@ import { connectSocket } from "../services/socket";
 import { AuthContext } from "../context/AuthContext";
 import { useContext } from "react";
 import { formatMoney, fromCents } from "../utils/money";
-import { logExpenseSplitDetails, logBalanceMatrix } from "../utils/expenseLogger";
+import { logExpenseSplitDetails } from "../utils/expenseLogger";
 
 function Dashboard() {
   const { user, token } = useContext(AuthContext);
@@ -58,6 +58,10 @@ function Dashboard() {
   const [groupMembers, setGroupMembers] = useState([]);
   const [balances, setBalances] = useState({});
   const [currentUserBalances, setCurrentUserBalances] = useState({});
+  const [currentUserMatrixKey, setCurrentUserMatrixKey] = useState("");
+  const [balanceDetails, setBalanceDetails] = useState([]);
+  const [balancesLoading, setBalancesLoading] = useState(false);
+  const [balancesError, setBalancesError] = useState("");
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [menuOpenMsgId, setMenuOpenMsgId] = useState(null);
   const [showSlidePanel, setShowSlidePanel] = useState(false);
@@ -80,32 +84,44 @@ function Dashboard() {
     const row = res.data.currentUserBalances && typeof res.data.currentUserBalances === "object"
       ? res.data.currentUserBalances
       : {};
+    const resolvedKey = String(res.data.currentUserMatrixKey || "").trim();
+    const details = Array.isArray(res.data.balanceDetails) ? res.data.balanceDetails : [];
 
-    return { matrix, row };
+    return { matrix, row, resolvedKey, details };
   };
 
   const refreshGroupBalances = async (groupId, options = {}) => {
     const { forceRebuild = false } = options;
     if (!groupId) return;
 
+    setBalancesLoading(true);
+    setBalancesError("");
+
     try {
       if (forceRebuild) {
         await api.post(`/settlement/${groupId}/rebuild`, null, { params: { t: Date.now() } });
       }
 
-      const { matrix, row } = await fetchBalancesMatrix(groupId);
+      const { matrix, row, resolvedKey, details } = await fetchBalancesMatrix(groupId);
       setBalances(matrix);
       setCurrentUserBalances(row);
+      setCurrentUserMatrixKey(resolvedKey);
+      setBalanceDetails(details);
     } catch (err) {
       console.warn("Balances fetch failed, rebuilding ledger once:", err?.response?.status || err.message);
       try {
         await api.post(`/settlement/${groupId}/rebuild`, null, { params: { t: Date.now() } });
-        const { matrix: retryMatrix, row: retryRow } = await fetchBalancesMatrix(groupId);
+        const { matrix: retryMatrix, row: retryRow, resolvedKey: retryResolvedKey, details: retryDetails } = await fetchBalancesMatrix(groupId);
         setBalances(retryMatrix);
         setCurrentUserBalances(retryRow);
+        setCurrentUserMatrixKey(retryResolvedKey);
+        setBalanceDetails(retryDetails);
       } catch (retryErr) {
         console.error("Error refreshing balances after rebuild:", retryErr);
+        setBalancesError(retryErr?.response?.data?.message || retryErr.message || "Failed to load balances");
       }
+    } finally {
+      setBalancesLoading(false);
     }
   };
 
@@ -235,6 +251,195 @@ function Dashboard() {
     return [...new Set(aliases)];
   };
 
+  const normalizeIdentity = (value) => String(value || "").trim().toLowerCase();
+  const normalizeIdentityStrict = (value) => normalizeIdentity(value).replace(/[^a-z0-9]/g, "");
+
+  const getCurrentUserIdentityAliases = () => {
+    const storedUser = getStoredUser();
+    return [...new Set([
+      currentUser?.id,
+      currentUser?._id,
+      currentUser?.userId,
+      currentUser?.email,
+      currentUser?.name,
+      storedUser?.id,
+      storedUser?._id,
+      storedUser?.userId,
+      storedUser?.email,
+      storedUser?.name,
+      getCurrentUserId()
+    ].map((value) => String(value || "").trim()).filter(Boolean))];
+  };
+
+  const getMatrixRowByAliases = (matrix = {}, aliases = []) => {
+    const matrixKeys = Object.keys(matrix || {});
+    if (matrixKeys.length === 0 || aliases.length === 0) {
+      return { key: "", row: {} };
+    }
+
+    const exactKey = aliases.find((alias) => matrixKeys.includes(alias));
+    if (exactKey) {
+      return { key: exactKey, row: matrix[exactKey] || {} };
+    }
+
+    const lowerKeyMap = new Map(matrixKeys.map((key) => [normalizeIdentity(key), key]));
+    const strictKeyMap = new Map(matrixKeys.map((key) => [normalizeIdentityStrict(key), key]));
+    for (const alias of aliases) {
+      const matchedKey = lowerKeyMap.get(normalizeIdentity(alias));
+      if (matchedKey) {
+        return { key: matchedKey, row: matrix[matchedKey] || {} };
+      }
+
+      const strictMatchedKey = strictKeyMap.get(normalizeIdentityStrict(alias));
+      if (strictMatchedKey) {
+        return { key: strictMatchedKey, row: matrix[strictMatchedKey] || {} };
+      }
+    }
+
+    return { key: "", row: {} };
+  };
+
+  const hasRowValues = (row = {}) => Object.values(row || {}).some((value) => Number(value) !== 0);
+
+  const getCurrentUserMatrixRow = () => {
+    const matrix = effectiveBalanceMatrix && typeof effectiveBalanceMatrix === "object" ? effectiveBalanceMatrix : {};
+    const aliases = getCurrentUserIdentityAliases();
+
+    const hintedRow = currentUserMatrixKey
+      ? matrix[currentUserMatrixKey]
+      : null;
+    if (hintedRow && hasRowValues(hintedRow)) {
+      return hintedRow;
+    }
+
+    const aliasMatch = getMatrixRowByAliases(matrix, aliases);
+    if (aliasMatch.row && hasRowValues(aliasMatch.row)) {
+      return aliasMatch.row;
+    }
+
+    if (currentUserBalances && hasRowValues(currentUserBalances)) {
+      return currentUserBalances;
+    }
+
+    const nonZeroRows = Object.values(matrix).filter((row) => hasRowValues(row));
+    if (nonZeroRows.length > 0) {
+      return nonZeroRows[0];
+    }
+
+    return hintedRow || aliasMatch.row || currentUserBalances || {};
+  };
+
+  const getValueFromRowByMemberId = (row = {}, memberId = "") => {
+    const member = getMemberById(memberId);
+    const aliases = getMemberKeyAliases(member);
+
+    for (const alias of aliases) {
+      const direct = Number(row?.[alias] ?? 0);
+      if (direct !== 0) {
+        return direct;
+      }
+    }
+
+    const rowKeys = Object.keys(row || {});
+    const lowerRowKeyMap = new Map(rowKeys.map((key) => [normalizeIdentity(key), key]));
+    const strictRowKeyMap = new Map(rowKeys.map((key) => [normalizeIdentityStrict(key), key]));
+    for (const alias of aliases) {
+      const matchedKey = lowerRowKeyMap.get(normalizeIdentity(alias));
+      if (matchedKey) {
+        return Number(row?.[matchedKey] ?? 0);
+      }
+
+      const strictMatchedKey = strictRowKeyMap.get(normalizeIdentityStrict(alias));
+      if (strictMatchedKey) {
+        return Number(row?.[strictMatchedKey] ?? 0);
+      }
+    }
+
+    return 0;
+  };
+
+  const getPairBalanceFromMatrix = (matrix = {}, currentUserAliases = [], peerAliases = []) => {
+    const source = matrix && typeof matrix === "object" ? matrix : {};
+    const rowKeys = Object.keys(source);
+    if (rowKeys.length === 0 || currentUserAliases.length === 0 || peerAliases.length === 0) {
+      return 0;
+    }
+
+    const rowMatch = rowKeys.find((key) => {
+      const normalized = normalizeIdentityStrict(key);
+      return currentUserAliases.some((alias) => normalizeIdentityStrict(alias) === normalized);
+    });
+
+    if (rowMatch) {
+      const row = source[rowMatch] || {};
+      const rowCols = Object.keys(row);
+      const directCol = rowCols.find((key) => {
+        const normalized = normalizeIdentityStrict(key);
+        return peerAliases.some((alias) => normalizeIdentityStrict(alias) === normalized);
+      });
+
+      if (directCol) {
+        const value = Number(row?.[directCol] ?? 0);
+        if (value !== 0) {
+          return value;
+        }
+      }
+    }
+
+    const reverseRowMatch = rowKeys.find((key) => {
+      const normalized = normalizeIdentityStrict(key);
+      return peerAliases.some((alias) => normalizeIdentityStrict(alias) === normalized);
+    });
+
+    if (reverseRowMatch) {
+      const row = source[reverseRowMatch] || {};
+      const rowCols = Object.keys(row);
+      const directCol = rowCols.find((key) => {
+        const normalized = normalizeIdentityStrict(key);
+        return currentUserAliases.some((alias) => normalizeIdentityStrict(alias) === normalized);
+      });
+
+      if (directCol) {
+        const value = Number(row?.[directCol] ?? 0);
+        if (value !== 0) {
+          return -value;
+        }
+      }
+    }
+
+    for (const rowKey of rowKeys) {
+      const row = source[rowKey] || {};
+      const rowCols = Object.keys(row);
+      const isCurrentUserRow = currentUserAliases.some((alias) => normalizeIdentityStrict(alias) === normalizeIdentityStrict(rowKey));
+      if (!isCurrentUserRow) {
+        continue;
+      }
+
+      for (const colKey of rowCols) {
+        if (peerAliases.some((alias) => normalizeIdentityStrict(alias) === normalizeIdentityStrict(colKey))) {
+          return Number(row?.[colKey] ?? 0);
+        }
+      }
+    }
+
+    for (const rowKey of rowKeys) {
+      const row = source[rowKey] || {};
+      const rowCols = Object.keys(row);
+      const isPeerRow = peerAliases.some((alias) => normalizeIdentityStrict(alias) === normalizeIdentityStrict(rowKey));
+      if (!isPeerRow) {
+        continue;
+      }
+
+      for (const colKey of rowCols) {
+        if (currentUserAliases.some((alias) => normalizeIdentityStrict(alias) === normalizeIdentityStrict(colKey))) {
+          return -Number(row?.[colKey] ?? 0);
+        }
+      }
+    }
+
+    return 0;
+  };
+
   const resolveMatrixRowKeyForMemberId = (memberId) => {
     const matrixKeys = Object.keys(effectiveBalanceMatrix || {});
     if (matrixKeys.length === 0) return "";
@@ -244,55 +449,44 @@ function Dashboard() {
     return aliases.find((alias) => matrixKeys.includes(alias)) || "";
   };
 
-  const getValueFromRowByMemberId = (row = {}, memberId = "") => {
-    const member = getMemberById(memberId);
-    const aliases = getMemberKeyAliases(member);
-
-    for (const alias of aliases) {
-      const value = Number(row?.[alias] ?? 0);
-      if (value !== 0) {
-        return value;
-      }
-    }
-
-    // If all aliases are either absent or zero, return the first present numeric value (including 0).
-    for (const alias of aliases) {
-      if (Object.prototype.hasOwnProperty.call(row || {}, alias)) {
-        return Number(row?.[alias] ?? 0);
-      }
-    }
-
-    return 0;
-  };
-
   const getMemberBalanceSummary = (memberId) => {
-    const loggedInMemberId = resolveCurrentGroupMemberId();
-    const matrixRowKey = resolveMatrixRowKeyForMemberId(loggedInMemberId) || String(loggedInMemberId || "");
-    const matrixRow = matrixRowKey ? (effectiveBalanceMatrix?.[matrixRowKey] || {}) : {};
-    const authoritativeRow = hasNonZeroRowValues(currentUserBalances) ? currentUserBalances : matrixRow;
-    const matrixCents = getValueFromRowByMemberId(authoritativeRow, memberId);
-    // Match the debug table convention where displayed rawCents is sign-inverted.
-    const displayRawCents = -matrixCents;
-    const absAmount = formatMoney(fromCents(Math.abs(displayRawCents)));
+    const memberIdStr = String(memberId || "");
+    const detail = (balanceDetails || []).find((item) => String(item.memberId || "") === memberIdStr);
+    const member = getMemberById(memberIdStr);
+    const pairBalanceCents = getPairBalanceFromMatrix(
+      effectiveBalanceMatrix,
+      getCurrentUserIdentityAliases(),
+      getMemberKeyAliases(member)
+    );
+    const currentUserRow = getCurrentUserMatrixRow();
+    const rowBalanceCents = getValueFromRowByMemberId(currentUserRow, memberId);
+    const matrixCents = pairBalanceCents !== 0 ? pairBalanceCents : rowBalanceCents;
 
-    if (displayRawCents > 0) {
+    if (detail && detail.state && detail.state !== "settled") {
       return {
-        state: "positive",
-        valueText: `+₹${absAmount}`
+        state: detail.state,
+        valueText: detail.valueText
       };
     }
 
-    if (displayRawCents < 0) {
+    if (detail && detail.state === "settled" && matrixCents === 0) {
       return {
-        state: "negative",
-        valueText: `-₹${absAmount}`
+        state: detail.state,
+        valueText: detail.valueText
       };
     }
 
-    return {
-      state: "settled",
-      valueText: "₹0.00"
-    };
+    const absAmount = formatMoney(fromCents(Math.abs(matrixCents)));
+
+    if (matrixCents > 0) {
+      return { state: "positive", valueText: `+₹${absAmount}` };
+    }
+
+    if (matrixCents < 0) {
+      return { state: "negative", valueText: `-₹${absAmount}` };
+    }
+
+    return { state: "settled", valueText: "₹0.00" };
   };
 
   const getCurrentUserGroupPeers = () => {
@@ -301,14 +495,6 @@ function Dashboard() {
       ? groupMembers.filter((member) => String(member?._id || member?.id || "") !== currentUserId)
       : [];
   };
-
-  useEffect(() => {
-    if (!selectedChat?._id || chatType !== "group" || !groupMembers || groupMembers.length === 0) {
-      return;
-    }
-
-    logBalanceMatrix(effectiveBalanceMatrix && typeof effectiveBalanceMatrix === "object" ? effectiveBalanceMatrix : {}, groupMembers, selectedChat?._id);
-  }, [effectiveBalanceMatrix, groupMembers, selectedChat?._id, chatType]);
 
   // Close slide panel when switching chats
   useEffect(() => {
@@ -644,6 +830,8 @@ function Dashboard() {
       });
       setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
       setCurrentUserBalances(res.data.currentUserBalances && typeof res.data.currentUserBalances === "object" ? res.data.currentUserBalances : {});
+      setCurrentUserMatrixKey(String(res.data.currentUserMatrixKey || "").trim());
+      setBalanceDetails(Array.isArray(res.data.balanceDetails) ? res.data.balanceDetails : []);
       setShowBalanceModal(true);
     } catch (err) {
       console.error("Error fetching balances:", err);
@@ -1025,34 +1213,42 @@ function Dashboard() {
                   {chatType === 'group' && (
                     <div className="px-6 pb-4">
                       <h4 className="text-sm font-semibold text-gray-300 mb-2">Balance Details</h4>
-                      {getCurrentUserGroupPeers().length > 0 ? (
-                        <div className="space-y-1">
-                          {getCurrentUserGroupPeers().map((member, index) => {
-                            const memberId = member._id || member.id;
-                            const summary = getMemberBalanceSummary(memberId);
-                            const memberName = member.name || member.email || String(memberId);
+                      {balancesLoading && (
+                        <p className="text-gray-400 text-xs">Loading balances...</p>
+                      )}
+                      {!balancesLoading && balancesError && (
+                        <p className="text-red-400 text-xs">{balancesError}</p>
+                      )}
+                      {!balancesLoading && !balancesError && (
+                        getCurrentUserGroupPeers().length > 0 ? (
+                          <div className="space-y-1">
+                            {getCurrentUserGroupPeers().map((member, index) => {
+                              const memberId = member._id || member.id;
+                              const summary = getMemberBalanceSummary(memberId);
+                              const memberName = member.name || member.email || String(memberId);
 
-                            return (
-                              <div
-                                key={`${memberId}-${index}`}
-                                className="flex justify-between text-xs"
-                              >
-                                <span>{memberName}</span>
-                                {summary.state === "positive" ? (
-                                  <span className="bg-green-600 text-white font-bold px-2 py-0.5 rounded">
-                                    {summary.valueText}
-                                  </span>
-                                ) : summary.state === "negative" ? (
-                                  <span className="text-red-500 font-bold">{summary.valueText}</span>
-                                ) : (
-                                  <span className="text-gray-400 font-bold">{summary.valueText}</span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-gray-400 text-xs">Settled</p>
+                              return (
+                                <div
+                                  key={`${memberId}-${index}`}
+                                  className="flex justify-between text-xs"
+                                >
+                                  <span>{memberName}</span>
+                                  {summary.state === "positive" ? (
+                                    <span className="bg-green-600 text-white font-bold px-2 py-0.5 rounded">
+                                      {summary.valueText}
+                                    </span>
+                                  ) : summary.state === "negative" ? (
+                                    <span className="text-red-500 font-bold">{summary.valueText}</span>
+                                  ) : (
+                                    <span className="text-gray-400 font-bold">{summary.valueText}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-gray-400 text-xs">Settled</p>
+                        )
                       )}
                     </div>
                   )}
@@ -1410,10 +1606,7 @@ function Dashboard() {
                           setSplitAmounts({});
 
                           try {
-                            const rebuildRes = await api.post(`/settlement/${selectedChat._id}/rebuild`, null, {
-                              params: { t: Date.now() }
-                            });
-                            setBalances(rebuildRes?.data?.balances && typeof rebuildRes.data.balances === "object" ? rebuildRes.data.balances : {});
+                            await refreshGroupBalances(selectedChat._id, { forceRebuild: true });
                           } catch (e) {
                             console.error("Error refreshing balances:", e);
                             await refreshGroupBalances(selectedChat?._id);
@@ -1493,7 +1686,11 @@ function Dashboard() {
 
             <div className="mb-4">
               <h4 className="text-sm font-semibold text-gray-300 mb-2">Individual Balances:</h4>
-              {getCurrentUserGroupPeers().length > 0 ? (
+              {balancesLoading ? (
+                <p className="text-gray-400 text-xs">Loading balances...</p>
+              ) : balancesError ? (
+                <p className="text-red-400 text-xs">{balancesError}</p>
+              ) : getCurrentUserGroupPeers().length > 0 ? (
                 <div className="space-y-1">
                   {getCurrentUserGroupPeers().map((member, index) => {
                     const memberId = member._id || member.id;

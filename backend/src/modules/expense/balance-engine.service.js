@@ -316,9 +316,21 @@ async function getUserBalances(groupId, currentUserId) {
 }
 
 async function getGroupMatrix(groupId) {
-  const doc = await ensureGroupBalanceDoc(groupId);
   const memberIds = await getGroupMemberIds(groupId).catch(() => []);
-  return normalizeMatrixShape(doc.matrix || {}, memberIds);
+  const doc = await ensureGroupBalanceDoc(groupId);
+  const normalized = normalizeMatrixShape(doc.matrix || {}, memberIds);
+
+  if (hasNonZeroValues(normalized)) {
+    if (JSON.stringify(normalized) !== JSON.stringify(doc.matrix || {})) {
+      doc.matrix = normalized;
+      await doc.save();
+    }
+
+    return normalized;
+  }
+
+  const rebuilt = await rebuildGroupMatrix(groupId);
+  return normalizeMatrixShape(rebuilt || {}, memberIds);
 }
 
 async function rebuildGroupMatrix(groupId) {
