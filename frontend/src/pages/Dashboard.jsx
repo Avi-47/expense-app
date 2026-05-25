@@ -499,6 +499,52 @@ function Dashboard() {
     });
   };
 
+  const getDisplayBalanceDetail = (detail) => {
+    const balanceCents = Number(detail?.balanceCents || 0);
+    const absAmount = formatMoney(fromCents(Math.abs(balanceCents)));
+
+    if (balanceCents > 0) {
+      return {
+        state: "negative",
+        valueText: `-₹${absAmount}`,
+        canSettle: false
+      };
+    }
+
+    if (balanceCents < 0) {
+      return {
+        state: "positive",
+        valueText: `+₹${absAmount}`,
+        canSettle: true
+      };
+    }
+
+    return {
+      state: "settled",
+      valueText: "₹0.00",
+      canSettle: false
+    };
+  };
+
+  const handleQuickSettle = async (memberId, balanceCents) => {
+    if (!selectedChat || chatType !== "group") return;
+
+    try {
+      const amount = fromCents(Math.abs(Number(balanceCents || 0)));
+      if (amount <= 0) return;
+
+      await api.post(`/settlement/${selectedChat._id}`, {
+        toUserId: memberId,
+        amount
+      });
+
+      await refreshGroupBalances(selectedChat._id, { forceRebuild: true });
+    } catch (err) {
+      console.error("Quick settle failed:", err);
+      alert(err?.response?.data?.message || err.message || "Unable to settle payment");
+    }
+  };
+
   // Close slide panel when switching chats
   useEffect(() => {
     setShowSlidePanel(false);
@@ -1226,26 +1272,27 @@ function Dashboard() {
                         getRenderableBalanceDetails().length > 0 ? (
                           <div className="space-y-1">
                             {getRenderableBalanceDetails().map((detail, index) => {
-                              const summary = {
-                                state: detail.state,
-                                valueText: detail.valueText
-                              };
+                              const summary = getDisplayBalanceDetail(detail);
                               const memberName = detail.name || detail.email || String(detail.memberId || index);
 
                               return (
                                 <div
                                   key={`${detail.memberId || memberName}-${index}`}
-                                  className="flex justify-between text-xs"
+                                  className="flex justify-between items-center gap-3 text-sm"
                                 >
-                                  <span>{memberName}</span>
+                                  <span className="font-medium text-white">{memberName}</span>
                                   {summary.state === "positive" ? (
-                                    <span className="bg-green-600 text-white font-bold px-2 py-0.5 rounded">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleQuickSettle(detail.memberId, detail.balanceCents)}
+                                      className="bg-green-600 text-white font-bold px-3 py-1 rounded cursor-pointer transition-all hover:bg-green-500 hover:shadow-lg hover:scale-[1.02]"
+                                    >
                                       {summary.valueText}
-                                    </span>
+                                    </button>
                                   ) : summary.state === "negative" ? (
-                                    <span className="text-red-500 font-bold">{summary.valueText}</span>
+                                    <span className="text-red-400 font-bold text-base">{summary.valueText}</span>
                                   ) : (
-                                    <span className="text-gray-400 font-bold">{summary.valueText}</span>
+                                    <span className="text-gray-400 font-bold text-base">{summary.valueText}</span>
                                   )}
                                 </div>
                               );
@@ -1696,26 +1743,27 @@ function Dashboard() {
               ) : getRenderableBalanceDetails().length > 0 ? (
                 <div className="space-y-1">
                   {getRenderableBalanceDetails().map((detail, index) => {
-                    const summary = {
-                      state: detail.state,
-                      valueText: detail.valueText
-                    };
+                        const summary = getDisplayBalanceDetail(detail);
                     const memberName = detail.name || detail.email || String(detail.memberId || index);
 
                     return (
                       <div
                         key={`${detail.memberId || memberName}-${index}`}
-                        className="flex justify-between p-2 rounded"
+                            className="flex justify-between items-center gap-3 p-2 rounded text-sm"
                       >
-                        <span>{memberName}</span>
+                            <span className="font-medium text-white">{memberName}</span>
                         {summary.state === "positive" ? (
-                          <span className="bg-green-600 text-white font-bold px-2 py-0.5 rounded">
+                              <button
+                                type="button"
+                                onClick={() => handleQuickSettle(detail.memberId, detail.balanceCents)}
+                                className="bg-green-600 text-white font-bold px-3 py-1 rounded cursor-pointer transition-all hover:bg-green-500 hover:shadow-lg hover:scale-[1.02]"
+                              >
                             {summary.valueText}
-                          </span>
+                              </button>
                         ) : summary.state === "negative" ? (
-                          <span className="text-red-500 font-bold">{summary.valueText}</span>
+                              <span className="text-red-400 font-bold text-base">{summary.valueText}</span>
                         ) : (
-                          <span className="text-gray-400 font-bold">{summary.valueText}</span>
+                              <span className="text-gray-400 font-bold text-base">{summary.valueText}</span>
                         )}
                       </div>
                     );
