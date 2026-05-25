@@ -316,7 +316,7 @@ const getValidatedGroupParticipants = async (groupId, involvedUsers) => {
     return { error: "Group not found", status: 404, participants: [] };
   }
 
-  const memberSet = new Set((group.members || []).map((member) => toUserId(member)));
+  const memberSet = new Set((group.members || []).map((member) => toUserId(member && (member._id || member.id || member))));
   const requested = normalizeParticipants(involvedUsers);
   const validParticipants = requested.filter((userId) => memberSet.has(userId));
 

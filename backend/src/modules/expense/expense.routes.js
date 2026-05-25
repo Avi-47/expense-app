@@ -148,6 +148,15 @@ const idempotencyCheck = (req, res, next) => {
 	}
 
 	requestWindow.set(requestHash, now);
+	res.once("finish", () => {
+		if (res.statusCode >= 400) {
+			requestWindow.delete(requestHash);
+			return;
+		}
+
+		requestWindow.set(requestHash, Date.now());
+	});
+
 	return next();
 };
 
