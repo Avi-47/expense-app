@@ -105,57 +105,51 @@ const expenseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-expenseSchema.pre("validate", function validateLedger(next) {
-  try {
-    const totalCents = toCents(this.amount);
+expenseSchema.pre("validate", function validateLedger() {
+  const totalCents = toCents(this.amount);
 
-    let payerTotalCents = 0;
-    for (const payer of this.payers || []) {
-      payerTotalCents += toCents(payer.amount);
-    }
+  let payerTotalCents = 0;
+  for (const payer of this.payers || []) {
+    payerTotalCents += toCents(payer.amount);
+  }
 
-    let splitTotalCents = 0;
-    let splitPaidTotalCents = 0;
-    let netTotalCents = 0;
+  let splitTotalCents = 0;
+  let splitPaidTotalCents = 0;
+  let netTotalCents = 0;
 
-    for (const split of this.splits || []) {
-      const shareCents = toCents(split.amount);
-      const paidCents = toCents(split.paidAmount);
+  for (const split of this.splits || []) {
+    const shareCents = toCents(split.amount);
+    const paidCents = toCents(split.paidAmount);
 
-      splitTotalCents += shareCents;
-      splitPaidTotalCents += paidCents;
-      netTotalCents += paidCents - shareCents;
+    splitTotalCents += shareCents;
+    splitPaidTotalCents += paidCents;
+    netTotalCents += paidCents - shareCents;
 
-      split.status = paidCents === 0 ? "PENDING" : paidCents < shareCents ? "PARTIAL" : "PAID";
+    split.status = paidCents === 0 ? "PENDING" : paidCents < shareCents ? "PARTIAL" : "PAID";
 
-      split.amount = fromCents(shareCents);
-      split.paidAmount = fromCents(paidCents);
-    }
+    split.amount = fromCents(shareCents);
+    split.paidAmount = fromCents(paidCents);
+  }
 
-    if (payerTotalCents !== totalCents) {
-      throw new Error("sum(payers.amount) must equal total expense");
-    }
+  if (payerTotalCents !== totalCents) {
+    throw new Error("sum(payers.amount) must equal total expense");
+  }
 
-    if (splitTotalCents !== totalCents) {
-      throw new Error("sum(split.amount) must equal total expense");
-    }
+  if (splitTotalCents !== totalCents) {
+    throw new Error("sum(split.amount) must equal total expense");
+  }
 
-    if (splitPaidTotalCents !== totalCents) {
-      throw new Error("sum(split.paidAmount) must equal total expense");
-    }
+  if (splitPaidTotalCents !== totalCents) {
+    throw new Error("sum(split.paidAmount) must equal total expense");
+  }
 
-    if (netTotalCents !== 0) {
-      throw new Error("sum(paid - share) must equal 0");
-    }
+  if (netTotalCents !== 0) {
+    throw new Error("sum(paid - share) must equal 0");
+  }
 
-    this.amount = fromCents(totalCents);
-    for (const payer of this.payers || []) {
-      payer.amount = fromCents(toCents(payer.amount));
-    }
-
-    return next();
-  } catch (error) {
-    return next(error);
+  this.amount = fromCents(totalCents);
+  for (const payer of this.payers || []) {
+    payer.amount = fromCents(toCents(payer.amount));
   }
 });
 
