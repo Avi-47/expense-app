@@ -59,6 +59,8 @@ function Group() {
     : "";
     const [messages, setMessages] = useState([]);
   const [balances, setBalances] = useState({});
+    const [currentUserBalances, setCurrentUserBalances] = useState({});
+    const [currentUserMatrixKey, setCurrentUserMatrixKey] = useState("");
   const [input, setInput] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [proposal, setProposal] = useState(null);
@@ -168,6 +170,8 @@ function Group() {
       });
       console.log("BALANCES RESPONSE:", JSON.stringify(res.data, null, 2));
       setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
+      setCurrentUserBalances(res.data.currentUserBalances && typeof res.data.currentUserBalances === "object" ? res.data.currentUserBalances : {});
+      setCurrentUserMatrixKey(String(res.data.currentUserMatrixKey || "").trim());
     } catch (err) {
       console.warn("Balances fetch failed, rebuilding ledger once:", err?.response?.status || err.message);
       try {
@@ -181,6 +185,8 @@ function Group() {
         });
         console.log("BALANCES RETRY RESPONSE:", JSON.stringify(retry.data, null, 2));
         setBalances(retry.data.balances && typeof retry.data.balances === "object" ? retry.data.balances : {});
+        setCurrentUserBalances(retry.data.currentUserBalances && typeof retry.data.currentUserBalances === "object" ? retry.data.currentUserBalances : {});
+        setCurrentUserMatrixKey(String(retry.data.currentUserMatrixKey || "").trim());
       } catch (retryErr) {
         console.error("Error refreshing balances after rebuild:", retryErr);
       }
@@ -194,7 +200,9 @@ function Group() {
 
   const getMemberBalanceSummary = useCallback((memberId) => {
     const currentUserId = String(currentUser?._id || currentUser?.id || user?._id || user?.id || "");
-    const currentRow = balances?.[currentUserId] || {};
+    const currentRow = currentUserBalances && typeof currentUserBalances === "object"
+      ? currentUserBalances
+      : (currentUserMatrixKey && balances?.[currentUserMatrixKey]) || balances?.[currentUserId] || {};
     const netAmount = Number(currentRow[String(memberId)] || 0);
 
     if (netAmount > 0) {
@@ -215,7 +223,7 @@ function Group() {
       state: "settled",
       label: "settled"
     };
-  }, [balances, resolveMemberName]);
+  }, [balances, currentUserBalances, currentUserMatrixKey, resolveMemberName, currentUser, user]);
 
   const handleInviteUser = async () => {
     try {

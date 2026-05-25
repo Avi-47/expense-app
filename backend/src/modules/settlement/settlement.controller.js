@@ -1,6 +1,7 @@
 const engine = require("../expense/balance-engine.service");
 const { getGroupMatrix } = require("../expense/balance.service");
 const Group = require("../group/group.model");
+const User = require("../auth/user.model");
 
 const normalizeKey = (value) => String(value || "").trim();
 const normalizeKeyLower = (value) => normalizeKey(value).toLowerCase();
@@ -21,6 +22,21 @@ const getUserAliases = (user = {}) => {
   ].filter(Boolean);
 
   return [...new Set(aliases)];
+};
+
+const getCurrentUserAliases = async (user = {}) => {
+  const aliases = getUserAliases(user);
+  const userId = normalizeKey(user?.id || user?._id || user?.userId);
+
+  if (userId) {
+    const userDoc = await User.findById(userId).select("name email").lean().catch(() => null);
+    if (userDoc) {
+      aliases.push(normalizeKey(userDoc.name));
+      aliases.push(normalizeKey(userDoc.email));
+    }
+  }
+
+  return [...new Set(aliases.filter(Boolean))];
 };
 
 const getValueFromRowByAliases = (row = {}, aliases = []) => {
@@ -109,7 +125,7 @@ const resolveCurrentUserBalancesRow = async (groupId, balances = {}, user = {}) 
     return { key: "", row: {} };
   }
 
-  const directAliases = getUserAliases(user);
+  const directAliases = await getCurrentUserAliases(user);
   for (const alias of directAliases) {
     if (Object.prototype.hasOwnProperty.call(matrix, alias)) {
       return { key: alias, row: matrix[alias] || {} };
