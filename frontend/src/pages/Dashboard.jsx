@@ -830,8 +830,6 @@ function Dashboard() {
         receiverId: selectedChat._id,
         content: messageInput
       });
-      // Add message to local state immediately
-      setMessages(prev => [...prev, messageData]);
       // Update conversation with last message
       updateConversation(selectedChat._id, messageInput);
     } else {
@@ -839,11 +837,11 @@ function Dashboard() {
         groupId: selectedChat._id,
         content: messageInput
       });
-      // Add message to local state immediately
-      setMessages(prev => [...prev, messageData]);
       // Also update the group with last message for sorting
       fetchSidebar();
     }
+    // Add message to local state immediately
+    setMessages(prev => [...prev, messageData]);
     setMessageInput("");
   };
 

@@ -1,46 +1,25 @@
 import React from "react";
 import { useParams, useNavigate } from "react-router-dom"
-import { useState, useEffect, useRef, useContext, useCallback } from "react";
+import { useState, useEffect, useContext, useRef } from "react";
 import api from "../services/api";
-import { connectSocket } from "../services/socket";
 import { AuthContext } from "../context/AuthContext";
 import { formatMoney, fromCents } from "../utils/money";
 import { logExpenseSplitDetails, logBalanceMatrix } from "../utils/expenseLogger";
 
-const formatMessageDate = (timestamp) => {
-  if (!timestamp) return null;
-  const date = new Date(timestamp);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  
-  const time = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  
-  if (msgDate.getTime() === today.getTime()) {
-    return `Today ${time}`;
-  } else if (msgDate.getTime() === yesterday.getTime()) {
-    return `Yesterday ${time}`;
-  } else {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year} ${time}`;
-  }
-};
+// Import custom hooks
+import { useGroup } from "../hooks/group/useGroup";
+import { useGroupMessages } from "../hooks/group/useGroupMessages";
+import { useGroupBalances } from "../hooks/group/useGroupBalances";
+import { useGroupSocket } from "../hooks/group/useGroupSocket";
 
-const getDateKey = (timestamp) => {
-  if (!timestamp) return 'unknown';
-  const date = new Date(timestamp);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  
-  if (msgDate.getTime() === today.getTime()) return 'today';
-  if (msgDate.getTime() === yesterday.getTime()) return 'yesterday';
-  return date.toISOString().split('T')[0];
-};
+// Import components
+import GroupHeader from "../components/group/GroupHeader";
+import MessageList from "../components/group/MessageList";
+import ChatInput from "../components/group/ChatInput";
+import GroupInfoPanel from "../components/group/GroupInfoPanel";
+import ExpenseModal from "../components/group/ExpenseModal";
+import ExpenseProposalModal from "../components/group/ExpenseProposalModal";
+import AddMemberModal from "../components/group/AddMemberModal";
 
 function Group() {
   const { groupId } = useParams();
@@ -48,19 +27,35 @@ function Group() {
   const { token, user } = useContext(AuthContext);
   const currentUser = user;
 
-  const [socket, setSocket] = useState(null);  
-  
-  const [group, setGroup] = useState(null);
-  const [groupName, setGroupName] = useState("");
-  const [members, setMembers] = useState([]);
+  // Use custom hooks
+  const { 
+    group, 
+    groupName, 
+    members, 
+    fetchGroup: refetchGroup,
+    leaveGroup: leaveGroupAPI,
+    addUserToGroup: addUserToGroupAPI
+  } = useGroup(groupId);
 
-  const inviteLink = group?.inviteToken
-    ? `${window.location.origin}/invite/${group.inviteToken}`
-    : "";
-    const [messages, setMessages] = useState([]);
-  const [balances, setBalances] = useState({});
-    const [currentUserBalances, setCurrentUserBalances] = useState({});
-    const [currentUserMatrixKey, setCurrentUserMatrixKey] = useState("");
+  const { 
+    messages, 
+    setMessages,
+    fetchMessages,
+    sendMessage: createSendMessageFn,
+    addMessage,
+    setClarificationMessage
+  } = useGroupMessages(groupId);
+
+  const {
+    balances,
+    currentUserBalances,
+    currentUserMatrixKey,
+    fetchBalances,
+    recalculateBalances,
+    getMemberBalanceSummary: getBalanceSummaryFn
+  } = useGroupBalances(groupId);
+
+  // Local UI state
   const [input, setInput] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [proposal, setProposal] = useState(null);
@@ -72,279 +67,124 @@ function Group() {
     includeSelf: true
   });
   const [selectAll, setSelectAll] = useState(false);
-
   const [streamingMessage, setStreamingMessage] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const streamingRef = useRef("");
-  const [inviteEmail, setInviteEmail] = useState("");
-
-  const [newMemberEmail, setNewMemberEmail] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [showSearch, setShowSearch] = useState(false);
 
-  const messagesContainerRef = useRef(null);
+  const inviteLink = group?.inviteToken
+    ? `${window.location.origin}/invite/${group.inviteToken}`
+    : "";
 
-  const handleSearchUsers = async (query) => {
-    setSearchQuery(query);
-    if (query.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    try {
-      const res = await api.get(`/auth/search?q=${query}`);
-      const currentMemberIds = members.map(m => m._id);
-      const filtered = res.data.filter(u => !currentMemberIds.includes(u._id));
-      setSearchResults(filtered);
-    } catch (err) {
-      console.error(err);
-    }
+  // Socket event handlers
+  const handleMessageReceived = (msg) => {
+    setMessages(prev => [...prev, msg]);
   };
 
-  const addUserToGroup = async (user) => {
-    try {
-      await api.post(`/groups/${groupId}/add-member`, { email: user.email });
-      setShowSearch(false);
-      setSearchQuery("");
-      setSearchResults([]);
-      fetchGroup();
-      fetchBalances();
-    } catch (err) {
-      alert(err.response?.data?.message || "Error adding member");
-    }
+  const handleExpenseProposal = (data) => {
+    setProposal(data);
   };
 
-  const copyGroupLink = () => {
-    navigator.clipboard.writeText(inviteLink);
-    alert("Group link copied!");
+  const handleExpenseAdded = (expense) => {
+    logExpenseSplitDetails(expense, members);
+    fetchBalances();
   };
-  const bottomRef = useRef(null);
 
-  // Debug - log when component mounts
+  const handleExpenseUpdated = (expense) => {
+    fetchBalances();
+  };
+
+  const handleExpenseDeleted = ({ groupId: deletedGroupId }) => {
+    fetchBalances();
+  };
+
+  const handleBalancesUpdated = ({ groupId: updatedGroupId }) => {
+    fetchBalances();
+  };
+
+  const handleAiStreamChunk = (token) => {
+    setIsStreaming(true);
+    streamingRef.current += token;
+    setStreamingMessage(streamingRef.current);
+  };
+
+  const handleAiStreamEnd = () => {
+    setIsStreaming(false);
+    streamingRef.current = "";
+    setStreamingMessage("");
+  };
+
+  const handleExpenseClarification = (data) => {
+    setClarificationMessage(data.message, "System");
+  };
+
+  // Socket setup using custom hook
+  const socket = useGroupSocket(
+    token,
+    groupId,
+    handleMessageReceived,
+    handleExpenseProposal,
+    handleExpenseAdded,
+    handleExpenseUpdated,
+    handleExpenseDeleted,
+    handleBalancesUpdated,
+    handleAiStreamChunk,
+    handleAiStreamEnd,
+    handleExpenseClarification
+  );
+
+  // Debug log
   useEffect(() => {
     console.log("Group component MOUNTED");
   }, []);
 
+  // Logging for scroll checks
   useEffect(() => {
     setTimeout(() => {
-      const container = messagesContainerRef.current;
       console.log("=== INITIAL SCROLL CHECK ===");
-      console.log("container:", container ? "FOUND" : "NOT FOUND");
-      if(container) {
-        console.log("scrollHeight:", container.scrollHeight);
-        console.log("clientHeight:", container.clientHeight);
-        console.log("canScroll:", container.scrollHeight > container.clientHeight);
-      }
+      console.log("Messages loaded, ready for scroll");
     }, 1000);
   }, []);
 
-  useEffect(() => {
-    if (!token) return;
-    const newSocket = connectSocket(token);
-    setSocket(newSocket);
-    return () => {
-      newSocket.disconnect();
-    };
-  }, [token]);
-
-  const fetchGroup = async () => {
-    const res = await api.get(`/groups/${groupId}`);
-    setGroup(res.data);
-    setGroupName(res.data.name);
-    setMembers(res.data.members || []);
-  };
-
-  const fetchMessages = async () => {
-    const res = await api.get(`/chat/${groupId}/messages`);
-    setMessages(res.data);
-  };
-
-  const fetchBalances = async () => {
-    try {
-      const res = await api.get(`/settlement/${groupId}/balances`, {
-        params: { t: Date.now() },
-        headers: {
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache"
-        }
-      });
-      console.log("BALANCES RESPONSE:", JSON.stringify(res.data, null, 2));
-      setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
-      setCurrentUserBalances(res.data.currentUserBalances && typeof res.data.currentUserBalances === "object" ? res.data.currentUserBalances : {});
-      setCurrentUserMatrixKey(String(res.data.currentUserMatrixKey || "").trim());
-    } catch (err) {
-      console.warn("Balances fetch failed, rebuilding ledger once:", err?.response?.status || err.message);
-      try {
-        await api.post(`/settlement/${groupId}/rebuild`);
-        const retry = await api.get(`/settlement/${groupId}/balances`, {
-          params: { t: Date.now() },
-          headers: {
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache"
-          }
-        });
-        console.log("BALANCES RETRY RESPONSE:", JSON.stringify(retry.data, null, 2));
-        setBalances(retry.data.balances && typeof retry.data.balances === "object" ? retry.data.balances : {});
-        setCurrentUserBalances(retry.data.currentUserBalances && typeof retry.data.currentUserBalances === "object" ? retry.data.currentUserBalances : {});
-        setCurrentUserMatrixKey(String(retry.data.currentUserMatrixKey || "").trim());
-      } catch (retryErr) {
-        console.error("Error refreshing balances after rebuild:", retryErr);
-      }
-    }
-  };
-
-  const resolveMemberName = useCallback((userId) => {
-    const member = members.find((item) => String(item._id) === String(userId));
-    return member?.name || member?.email || String(userId);
-  }, [members]);
-
-  const getMemberBalanceSummary = useCallback((memberId) => {
-    const currentUserId = String(currentUser?._id || currentUser?.id || user?._id || user?.id || "");
-    const currentRow = currentUserBalances && typeof currentUserBalances === "object"
-      ? currentUserBalances
-      : (currentUserMatrixKey && balances?.[currentUserMatrixKey]) || balances?.[currentUserId] || {};
-    const netAmount = Number(currentRow[String(memberId)] || 0);
-
-    if (netAmount > 0) {
-      return {
-        state: "incoming",
-        label: `owes you ₹${formatMoney(fromCents(netAmount))}`
-      };
-    }
-
-    if (netAmount < 0) {
-      return {
-        state: "outgoing",
-        label: `You owe ₹${formatMoney(fromCents(Math.abs(netAmount)))}`
-      };
-    }
-
-    return {
-      state: "settled",
-      label: "settled"
-    };
-  }, [balances, currentUserBalances, currentUserMatrixKey, resolveMemberName, currentUser, user]);
-
-  const handleInviteUser = async () => {
-    try {
-      await api.post(`/groups/${groupId}/invite`, {
-        email: inviteEmail
-      });
-      alert("Invite sent!");
-      setInviteEmail("");
-    } catch (err) {
-      alert(err.response?.data?.message || "Invite failed");
-    }
-  };
-
-  useEffect(() => {
-    fetchGroup();
-    fetchMessages();
-    fetchBalances();
-  }, [groupId]);
-
+  // Log balance matrix
   useEffect(() => {
     if (!members || members.length === 0) {
       return;
     }
-
     logBalanceMatrix(balances && typeof balances === "object" ? balances : {}, members, groupId);
   }, [balances, members, groupId]);
 
-  useEffect(() => {
-    if (!socket) return;
+  // Wrapped getMemberBalanceSummary to use hook with current state
+  const getMemberBalanceSummary = (memberId) => {
+    return getBalanceSummaryFn(
+      memberId,
+      currentUser,
+      String(currentUser?._id || currentUser?.id || user?._id || user?.id || ""),
+      members
+    );
+  };
 
-    console.log("[SOCKET] emitting join_group for groupId:", groupId);
-    socket.emit("join_group", groupId);
-
-    socket.on("message_received", (msg) => {
-      console.log("[SOCKET] message_received:", msg);
-      setMessages((prev) => [...prev, msg]);
-    });
-
-    socket.on("expense_proposal", (data) => {
-      console.log("[SOCKET] expense_proposal:", data);
-      setProposal(data);
-    });
-
-    socket.on("expense_added", (expense) => {
-      console.log("[SOCKET] expense_added event received:", expense);
-      if (expense?.groupId && String(expense.groupId) === String(groupId)) {
-        logExpenseSplitDetails(expense, members);
-        console.log("[SOCKET] → calling fetchBalances due to expense_added");
-        fetchBalances();
-      } else {
-        console.log("[SOCKET] → expense_added but wrong groupId, ignoring");
-      }
-    });
-
-    socket.on("expense_updated", (expense) => {
-      console.log("[SOCKET] expense_updated event received:", expense);
-      if (expense?.groupId && String(expense.groupId) === String(groupId)) {
-        console.log("[SOCKET] → calling fetchBalances due to expense_updated");
-        fetchBalances();
-      }
-    });
-
-    socket.on("expense_deleted", ({ groupId: deletedGroupId }) => {
-      console.log("[SOCKET] expense_deleted event received for groupId:", deletedGroupId);
-      if (String(deletedGroupId || groupId) === String(groupId)) {
-        console.log("[SOCKET] → calling fetchBalances due to expense_deleted");
-        fetchBalances();
-      }
-    });
-
-    socket.on("balances_updated", ({ groupId: updatedGroupId }) => {
-      console.log("[SOCKET] balances_updated event received for groupId:", updatedGroupId);
-      if (String(updatedGroupId || groupId) === String(groupId)) {
-        console.log("[SOCKET] → calling fetchBalances due to balances_updated");
-        fetchBalances();
-      }
-    });
-
-    socket.on("ai_stream_chunk", (token) => {
-      setIsStreaming(true);
-      streamingRef.current += token;
-      setStreamingMessage(streamingRef.current);
-    });
-
-    socket.on("ai_stream_end", () => {
-      setIsStreaming(false);
-      streamingRef.current = "";
-      setStreamingMessage("");
-    });
-
-    return () => {
-      console.log("[SOCKET] cleaning up listeners for groupId:", groupId);
-      socket.emit("leave_group", groupId);
-      socket.off("message_received");
-      socket.off("expense_proposal");
-      socket.off("expense_added");
-      socket.off("expense_updated");
-      socket.off("expense_deleted");
-      socket.off("balances_updated");
-      socket.off("ai_stream_chunk");
-      socket.off("ai_stream_end");
+  // Send message handler
+  const handleSendMessage = () => {
+    if (!input.trim() || !socket) return;
+    
+    const messageData = {
+      content: input,
+      sender: currentUser,
+      createdAt: new Date().toISOString()
     };
-  }, [socket, groupId]);
-
-  useEffect(() => {
-    if (!socket) return;
-    socket.on("expense_clarification_needed", (data) => {
-      setMessages(prev => [
-        ...prev,
-        {
-          _id: Date.now(),
-          sender: { name: "System" },
-          content: data.message
-        }
-      ]);
+    
+    socket.emit("send_message", {
+      groupId,
+      content: input
     });
-    return () => {
-      socket.off("expense_clarification_needed");
-    };
-  }, [socket]);
+    setMessages(prev => [...prev, messageData]);
+    setInput("");
+  };
 
+  // Create expense handler
   const handleCreateExpense = async () => {
     try {
       console.log("[EXPENSE] Creating expense with data:", expenseData);
@@ -354,15 +194,12 @@ function Group() {
         return;
       }
 
-      // Get current user as the payer for now
       const payerId = user?.id;
       if (!payerId) {
         alert("Unable to determine current user");
         return;
       }
 
-      // If expense modal was meant to collect payers info, use this:
-      // For now, assume current user paid the full amount
       const payers = [{
         user: payerId,
         amount: Number(expenseData.amount)
@@ -372,7 +209,7 @@ function Group() {
         description: expenseData.description,
         amount: Number(expenseData.amount),
         involvedUsers: expenseData.participants,
-        payers: payers,  // NOW SENDING PAYERS!
+        payers: payers,
         splitType: "equal"
       });
       
@@ -392,146 +229,34 @@ function Group() {
     }
   };
 
-  const sendMessage = () => {
-    if (!input.trim() || !socket) return;
-    const messageData = {
-      content: input,
-      sender: currentUser,
-      createdAt: new Date().toISOString()
-    };
-    if (groupId) {
-      socket.emit("send_message", {
-        groupId,
-        content: input
-      });
-      setMessages(prev => [...prev, messageData]);
-    } else {
-      socket.emit("send_message", {
-        receiverId: userId,
-        content: input
-      });
-      setMessages(prev => [...prev, messageData]);
-    }
-    setInput("");
-  };
-
-  const handlePay = async (toUser, amount) => {
-    const res = await api.post(
-      `/payments/${groupId}/create-intent`,
-      { to: toUser, amount }
-    );
-    const options = {
-      key: res.data.key,
-      amount: res.data.amount,
-      currency: res.data.currency,
-      order_id: res.data.orderId,
-      handler: async function (response) {
-        await api.post("/payments/verify", response);
-        fetchBalances();
-      },
-    };
-    const rzp = new window.Razorpay(options);
-    rzp.open();
-  };
-
+  // Handle recalculate balances
   const handleRecalculateBalances = async () => {
-    try {
-      console.log("[RECALC] User clicked Recalculate Balances button");
-      const res = await api.post(`/settlement/${groupId}/rebuild`);
-      console.log("[RECALC] Rebuild response:", res.data);
-      setBalances(res.data.balances && typeof res.data.balances === "object" ? res.data.balances : {});
+    const result = await recalculateBalances();
+    if (result.success) {
       alert("Balances recalculated successfully!");
-    } catch (err) {
-      console.error("[RECALC] Error recalculating balances:", err);
-      alert("Error recalculating balances: " + (err.response?.data?.message || err.message));
+    } else {
+      alert("Error recalculating balances: " + result.message);
     }
   };
 
-  const addMember = async () => {
-    try {
-      await api.post(`/groups/${groupId}/add-member`, {
-        email: newMemberEmail,
-      });
-      setNewMemberEmail("");
-      fetchGroup();
-      fetchBalances();
-    } catch (err) {
-      alert(err.response?.data?.message || "Error adding member");
-    }
-  };
-
+  // Handle leave group
   const handleLeaveGroup = async () => {
-    try {
-      await api.post(`/groups/${groupId}/leave`);
+    const result = await leaveGroupAPI();
+    if (result.success) {
       alert("You left the group");
       navigate("/dashboard");
-    } catch (err) {
-      alert(
-        err.response?.data?.message ||
-        "You must settle all dues before leaving"
-      );
+    } else {
+      alert(result.message);
     }
   };
 
-  const renderMessage = (msg, i) => {
-    const currentDateKey = getDateKey(msg.createdAt || msg.timestamp);
-    const showDateSeparator = i === 0 || currentDateKey !== getDateKey(messages[i-1]?.createdAt || messages[i-1]?.timestamp);
-    
-    let senderId = null;
-    if (msg.sender) {
-      if (typeof msg.sender === "string") {
-        senderId = msg.sender;
-      } else if (typeof msg.sender === "object") {
-        senderId = msg.sender._id || msg.sender.id || msg.sender.userId || null;
-      }
-    }
-
-    const senderName = msg.sender && typeof msg.sender === "object" ? msg.sender.name : "Unknown";
-
-    let currentUserId = null;
-    try {
-      const stored = localStorage.getItem("user");
-      if (stored && stored !== "undefined" && stored !== "null") {
-        const parsed = JSON.parse(stored);
-        currentUserId = parsed?.id || parsed?._id || null;
-      }
-    } catch (e) {
-      // Ignore
-    }
-    
-    const senderIdStr = senderId ? String(senderId) : "";
-    const currentUserIdStr = currentUserId ? String(currentUserId) : "";
-    const isMe = senderIdStr === currentUserIdStr && senderIdStr !== "" && currentUserIdStr !== "";
-
-    return (
-      <React.Fragment key={msg._id || i}>
-        {showDateSeparator && (
-          <div className="date-separator">
-            <span className="date-label">
-              {formatMessageDate(msg.createdAt || msg.timestamp)}
-            </span>
-          </div>
-        )}
-        <div className={`message-row ${isMe ? "message-mine" : "message-other"}`}>
-          <div className={`message-bubble ${isMe ? "bubble-mine" : "bubble-other"}`}>
-            {!isMe && <span className="sender-name">{senderName}</span>}
-            {msg.type === "invite" ? (
-              <div className="bg-blue-800 p-3 rounded">
-                <p>{senderName} invited you to join a group</p>
-                <button
-                  onClick={() => joinGroup(msg.inviteGroupId)}
-                  className="bg-green-600 px-3 py-1 rounded mt-2"
-                >
-                  Join Group
-                </button>
-              </div>
-            ) : (
-              <p>{msg.content}</p>
-            )}
-          </div>
-        </div>
-      </React.Fragment>
-    );
+  // Handle add user from search
+  const handleAddUserFromSearch = async () => {
+    setShowSearch(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    await refetchGroup();
+    await fetchBalances();
   };
 
   return (
@@ -541,318 +266,75 @@ function Group() {
       </div>
 
       <div className="group-main">
-        <div className="group-header">
-          <div className="header-left">
-            <button
-              className="md:hidden"
-              onClick={() => navigate("/dashboard")}
-            >
-              ←
-            </button>
-            <div className="header-slab" onClick={() => setShowInfo(true)}>
-              <div className="header-avatar">
-                {groupName.charAt(0).toUpperCase()}
-              </div>
-              <h2 className="header-group-name">{groupName}</h2>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowInfo(true)}
-            className="info-btn"
-          >
-            (i)
-          </button>
-        </div>
+        <GroupHeader 
+          groupName={groupName}
+          onBack={() => navigate("/dashboard")}
+          onInfoClick={() => setShowInfo(true)}
+        />
 
-<div 
-          className="messages-container" 
-          ref={messagesContainerRef}
-        >
-          <div className="messages-list">
-            {messages.map(renderMessage)}
-            {isStreaming && (
-              <div className="streaming-message">
-                ExpenseAI
-                <div className="streaming-text">
-                  {streamingMessage}
-                </div>
-              </div>
-            )}
-          </div>
-          <div ref={bottomRef}></div>
-        </div>
+        <MessageList 
+          messages={messages}
+          isStreaming={isStreaming}
+          streamingMessage={streamingMessage}
+        />
 
-        <div className="chat-input">
-          <button
-            onClick={() => setShowExpenseModal(true)}
-            className="expense-btn"
-          >
-            + Add Expense
-          </button>
-          <input
-            className="chat-input-field"
-            placeholder="Type message..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          />
-          <button
-            onClick={sendMessage}
-            className="send-btn"
-          >
-            Send
-          </button>
-        </div>
+        <ChatInput 
+          input={input}
+          setInput={setInput}
+          onSend={handleSendMessage}
+          onAddExpense={() => setShowExpenseModal(true)}
+        />
       </div>
 
       {showInfo && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          width: '320px',
-          height: '100vh',
-          backgroundColor: '#1f2937',
-          borderLeft: '1px solid #374151',
-          padding: '1.5rem',
-          zIndex: 1000,
-          overflowY: 'auto',
-          boxSizing: 'border-box'
-        }}>
-          <button
-            onClick={() => setShowInfo(false)}
-            style={{ marginBottom: '1rem', padding: '0.5rem', background: 'red', color: 'white', border: 'none', borderRadius: '4px' }}
-          >
-            Close
-          </button>
-
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-            <div style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              fontWeight: 'bold',
-              fontSize: '1.5rem'
-            }}>
-              {groupName.charAt(0).toUpperCase()}
-            </div>
-            <h2 className="text-xl font-bold">{groupName}</h2>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-gray-400 mb-2">Balance Details</h3>
-            {Array.isArray(members) && members.length > 0 ? members.map((member, index) => {
-              const memberId = member._id || member.id;
-              const summary = getMemberBalanceSummary(memberId);
-              const memberName = member.name || member.email || String(memberId);
-
-              return (
-                <div
-                  key={`${memberId}-${index}`}
-                  className={`flex justify-between p-2 rounded hover:bg-gray-700 ${
-                    summary.state === "outgoing" ? "text-red-500" : summary.state === "incoming" ? "text-green-500" : "text-gray-400"
-                  }`}
-                >
-                  <span>{memberName}</span>
-                  <span>{summary.label}</span>
-                </div>
-              );
-            }) : (
-              <div className="text-gray-400 text-sm">Settled</div>
-            )}
-          </div>
-
-          <button
-            className="bg-yellow-600 px-4 py-2 rounded text-white mt-4 w-full"
-            onClick={handleRecalculateBalances}
-          >
-            🔄 Recalculate Balances
-          </button>
-
-          <button
-            className="bg-red-600 px-4 py-2 rounded text-white mt-6 w-full"
-            onClick={handleLeaveGroup}
-          >
-            Leave Group
-          </button>
-        </div>
+        <GroupInfoPanel
+          groupName={groupName}
+          members={members}
+          onClose={() => setShowInfo(false)}
+          onRecalculateBalances={handleRecalculateBalances}
+          onLeaveGroup={handleLeaveGroup}
+          getMemberBalanceSummary={getMemberBalanceSummary}
+        />
       )}
 
       {proposal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3 className="text-lg font-bold">Confirm Expense</h3>
-            <p>Description: {proposal.description}</p>
-            <p>Amount: ₹{formatMoney(proposal.amount)}</p>
-            <div className="flex justify-between gap-2">
-              <button
-                className="bg-green-600 px-4 py-2 rounded"
-                onClick={async () => {
-                  await api.post(`/expenses/${groupId}/confirm`, proposal);
-                  setProposal(null);
-                  fetchBalances();
-                }}
-              >
-                Confirm
-              </button>
-              <button
-                className="bg-red-600 px-4 py-2 rounded"
-                onClick={() => setProposal(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <ExpenseProposalModal
+          proposal={proposal}
+          onConfirm={async () => {
+            await api.post(`/expenses/${groupId}/confirm`, proposal);
+            setProposal(null);
+            fetchBalances();
+          }}
+          onCancel={() => setProposal(null)}
+        />
       )}
 
       {showExpenseModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3 className="text-lg font-bold">Add Expense</h3>
-            <input
-              className="w-full p-2 rounded bg-gray-700 text-white"
-              placeholder="Description"
-              value={expenseData.description}
-              onChange={(e) =>
-                setExpenseData({ ...expenseData, description: e.target.value })
-              }
-            />
-            <input
-              type="number"
-              className="w-full p-2 rounded bg-gray-700 text-white"
-              placeholder="Amount"
-              value={expenseData.amount}
-              onChange={(e) =>
-                setExpenseData({ ...expenseData, amount: e.target.value })
-              }
-            />
-            <div>
-              <div className="mb-2">
-                <label className="text-sm">Split Between:</label>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 border-b border-gray-600 pb-2 mb-2">
-                  <input
-                    type="checkbox"
-                    checked={selectAll}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        const allMemberIds = members.map(m => m._id);
-                        setExpenseData({
-                          ...expenseData,
-                          participants: allMemberIds
-                        });
-                        setSelectAll(true);
-                      } else {
-                        setSelectAll(false);
-                      }
-                    }}
-                  />
-                  <span className="font-semibold">Select All</span>
-                </div>
-                {members.map(member => (
-                  <div key={member._id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={expenseData.participants.includes(member._id)}
-                      onChange={(e) => {
-                        const currentParticipants = expenseData.participants;
-                        let newParticipants;
-                        if (e.target.checked) {
-                          newParticipants = [...currentParticipants, member._id];
-                        } else {
-                          newParticipants = currentParticipants.filter(
-                            id => id !== member._id
-                          );
-                          setSelectAll(false);
-                        }
-                        const allMemberIds = members.map(m => m._id);
-                        const allSelected = allMemberIds.every(id => 
-                          newParticipants.includes(id)
-                        );
-                        setSelectAll(allSelected);
-                        setExpenseData({
-                          ...expenseData,
-                          participants: newParticipants
-                        });
-                      }}
-                    />
-                    <span>{member.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex justify-between">
-              <button
-                onClick={() => setShowExpenseModal(false)}
-                className="bg-red-600 px-4 py-2 rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateExpense}
-                className="bg-green-600 px-4 py-2 rounded"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
+        <ExpenseModal
+          expenseData={expenseData}
+          setExpenseData={setExpenseData}
+          members={members}
+          selectAll={selectAll}
+          setSelectAll={setSelectAll}
+          onClose={() => setShowExpenseModal(false)}
+          onSubmit={handleCreateExpense}
+        />
       )}
 
       {showSearch && (
-        <div className="modal-overlay">
-          <div className="modal-content search-modal">
-            <div className="modal-header">
-              <h3 className="text-lg font-bold">Add User to Group</h3>
-              <button
-                className="close-btn"
-                onClick={() => {
-                  setShowSearch(false);
-                  setSearchQuery("");
-                  setSearchResults([]);
-                }}
-              >
-                ×
-              </button>
-            </div>
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search by name or email..."
-              value={searchQuery}
-              onChange={(e) => handleSearchUsers(e.target.value)}
-              autoFocus
-            />
-            <div className="search-results">
-              {searchResults.length === 0 && searchQuery.length >= 2 && (
-                <p className="no-results">No users found</p>
-              )}
-              {searchResults.map(user => (
-                <div
-                  key={user._id}
-                  className="search-result-item"
-                  onClick={() => addUserToGroup(user)}
-                >
-                  <div className="user-avatar">
-                    {user.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="user-info">
-                    <span className="user-name">{user.name}</span>
-                    <span className="user-email">{user.email}</span>
-                  </div>
-                  <button className="add-btn">Add</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <AddMemberModal
+          groupId={groupId}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          searchResults={searchResults}
+          setSearchResults={setSearchResults}
+          onUserAdded={handleAddUserFromSearch}
+          onClose={() => {
+            setShowSearch(false);
+            setSearchQuery("");
+            setSearchResults([]);
+          }}
+        />
       )}
     </div>
   );
